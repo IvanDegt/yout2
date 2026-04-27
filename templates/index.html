@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>ReWrite Master</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="logo">⚡ ReWrite Master</div>
+      <div style="display:flex;gap:8px;margin-left:auto">
+        <a class="btn btn-sm btn-ghost" href="/transcribe">🎙 Транскрибация</a>
+        <button class="btn btn-primary" id="btn-new">+ Новый проект</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="index-main">
+    {% if projects %}
+    <div class="project-grid" id="project-grid">
+      {% for p in projects %}
+      <div class="project-card" data-id="{{ p.id }}">
+        <div class="pc-top">
+          <div class="pc-name">{{ p.name }}</div>
+          <div class="pc-date">{{ p.created_at[:10] }}</div>
+        </div>
+        <div class="pc-stages">
+          {% set s = p.stages %}
+          <span class="stage-pip {{ 'done' if (s.pre_analysis is defined and s.pre_analysis.result) else '' }}" title="Pre-Analysis">P</span>
+          <span class="stage-pip {{ 'done' if s.analysis.result else '' }}" title="Analysis">A</span>
+          <span class="stage-pip {{ 'done' if s.structure.result else '' }}" title="Structure">S</span>
+          <span class="stage-pip {{ 'done' if s.block_writer.blocks else '' }}" title="Block Writer">B</span>
+          <span class="stage-pip {{ 'done' if s.merger.result else '' }}" title="Merger">M</span>
+          <span class="stage-pip {{ 'done' if (s.quality_check is defined and s.quality_check.result) else '' }}" title="Quality Check">Q</span>
+          <span class="stage-pip {{ 'done' if s.final.result else '' }}" title="Final">F</span>
+        </div>
+        <div class="pc-actions">
+          <a class="btn btn-sm btn-primary" href="/project/{{ p.id }}">Открыть</a>
+          <button class="btn btn-sm btn-danger btn-delete" data-id="{{ p.id }}">Удалить</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <div class="empty-icon">📝</div>
+      <div class="empty-text">Проектов пока нет</div>
+      <div class="empty-sub">Нажмите «Новый проект» чтобы начать</div>
+    </div>
+    {% endif %}
+  </main>
+
+  <script>
+    document.getElementById('btn-new').addEventListener('click', async () => {
+      const res = await fetch('/project/new', { method: 'POST' });
+      const data = await res.json();
+      window.location.href = `/project/${data.id}`;
+    });
+
+    document.querySelectorAll('.btn-delete').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.preventDefault();
+        if (!confirm('Удалить проект?')) return;
+        const id = btn.dataset.id;
+        await fetch(`/project/${id}/delete`, { method: 'POST' });
+        btn.closest('.project-card').remove();
+        if (!document.querySelector('.project-card')) location.reload();
+      });
+    });
+  </script>
+</body>
+</html>

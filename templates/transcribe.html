@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Транскрибация — ReWrite Master</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/transcribe.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="header-inner">
+    <a class="logo" href="/">⚡ ReWrite Master</a>
+    <div class="header-center">
+      <span class="page-subtitle">🎙 Транскрибация YouTube</span>
+    </div>
+    <div class="header-actions">
+      <a class="btn btn-sm btn-ghost" href="/">← Проекты</a>
+    </div>
+  </div>
+</header>
+
+<div class="tr-page">
+
+  <!-- ── URL Input ──────────────────────────────────────────── -->
+  <div class="tr-input-card">
+    <div class="tr-input-label">Ссылка на YouTube видео</div>
+    <div class="tr-url-row">
+      <div class="tr-url-wrap">
+        <span class="tr-yt-icon">▶</span>
+        <input id="url-input" class="tr-url-input"
+          type="url"
+          placeholder="https://youtube.com/watch?v=..."
+          autocomplete="off"
+          spellcheck="false">
+        <button class="tr-paste-btn" id="btn-paste" title="Вставить из буфера">📋</button>
+        <button class="tr-clear-btn" id="btn-clear-url" title="Очистить" style="display:none">✕</button>
+      </div>
+      <button class="btn btn-primary tr-start-btn" id="btn-start">
+        <span class="tr-btn-icon">▶</span>
+        <span id="btn-start-text">Транскрибировать</span>
+      </button>
+    </div>
+
+    <!-- Video info preview -->
+    <div id="video-info" class="video-info" style="display:none">
+      <span class="vi-icon">🎬</span>
+      <span id="vi-title" class="vi-title"></span>
+      <span id="vi-duration" class="vi-duration"></span>
+    </div>
+  </div>
+
+  <!-- ── Translate card ──────────────────────────────────────── -->
+  <div class="tr-input-card tr-translate-card">
+    <div class="tr-translate-top">
+      <div class="tr-input-label">Перевод текста</div>
+      <div class="tr-translate-controls">
+        <select id="tr-target-lang" class="tr-lang-select">
+          <option value="ru">🇷🇺 Русский</option>
+          <option value="en">🇬🇧 English</option>
+          <option value="de">🇩🇪 Deutsch</option>
+          <option value="fr">🇫🇷 Français</option>
+          <option value="es">🇪🇸 Español</option>
+          <option value="it">🇮🇹 Italiano</option>
+          <option value="pt">🇵🇹 Português</option>
+          <option value="zh">🇨🇳 Китайский</option>
+          <option value="ja">🇯🇵 Японский</option>
+          <option value="ko">🇰🇷 Корейский</option>
+          <option value="uk">🇺🇦 Украинский</option>
+        </select>
+        <button class="btn btn-primary tr-start-btn" id="btn-translate" style="padding: 8px 18px;">
+          <span class="tr-btn-icon" id="tr-icon">✦</span>
+          <span id="btn-translate-text">Перевести</span>
+        </button>
+      </div>
+    </div>
+
+    <div class="tr-translate-body">
+      <!-- Input -->
+      <div class="tr-translate-col">
+        <div class="tr-col-label">Исходный текст</div>
+        <textarea id="tr-input-text" class="tr-textarea tr-translate-ta"
+          placeholder="Вставьте текст для перевода..."></textarea>
+        <div class="tr-col-footer">
+          <span id="tr-input-stats" class="tr-result-stats"></span>
+          <button class="btn btn-xs btn-ghost" onclick="clearTranslateInput()">Очистить</button>
+        </div>
+      </div>
+
+      <!-- Arrow -->
+      <div class="tr-translate-arrow">→</div>
+
+      <!-- Output -->
+      <div class="tr-translate-col">
+        <div class="tr-col-label" id="tr-output-label">Перевод</div>
+        <textarea id="tr-output-text" class="tr-textarea tr-translate-ta" readonly
+          placeholder="Перевод появится здесь..."></textarea>
+        <div class="tr-col-footer">
+          <span id="tr-output-stats" class="tr-result-stats"></span>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-xs btn-ghost" onclick="copyText('tr-output-text')">📋 Копировать</button>
+            <button class="btn btn-xs use-btn btn-xs" onclick="useTranslation()">→ В проект</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tr-translate-error" class="tr-translate-error" style="display:none"></div>
+  </div>
+
+  <!-- ── Steps progress ────────────────────────────────────── -->
+  <div class="tr-steps" id="tr-steps" style="display:none">
+    <div class="tr-step" id="step-1" data-n="1">
+      <div class="step-dot"></div>
+      <div class="step-body">
+        <div class="step-name">Получение информации</div>
+        <div class="step-msg" id="step-1-msg"></div>
+      </div>
+    </div>
+    <div class="tr-step" id="step-2" data-n="2">
+      <div class="step-dot"></div>
+      <div class="step-body">
+        <div class="step-name">Скачивание аудио</div>
+        <div class="step-msg" id="step-2-msg"></div>
+        <div class="step-progress" id="step-2-progress" style="display:none">
+          <div class="step-progress-fill" id="step-2-fill"></div>
+          <span class="step-progress-pct" id="step-2-pct">0%</span>
+        </div>
+      </div>
+    </div>
+    <div class="tr-step" id="step-3" data-n="3">
+      <div class="step-dot"></div>
+      <div class="step-body">
+        <div class="step-name">Транскрибирование (Whisper)</div>
+        <div class="step-msg" id="step-3-msg"></div>
+      </div>
+    </div>
+    <div class="tr-step" id="step-4" data-n="4">
+      <div class="step-dot"></div>
+      <div class="step-body">
+        <div class="step-name">Перевод на русский</div>
+        <div class="step-msg" id="step-4-msg"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Error banner ──────────────────────────────────────── -->
+  <div id="error-banner" class="error-banner" style="display:none">
+    <span class="error-icon">⚠</span>
+    <span id="error-msg"></span>
+    <button onclick="dismissError()" class="error-close">✕</button>
+  </div>
+
+  <!-- ── Results ───────────────────────────────────────────── -->
+  <div class="tr-results" id="tr-results" style="display:none">
+
+    <!-- Original -->
+    <div class="tr-result-card" id="card-original">
+      <div class="tr-result-header">
+        <div class="tr-result-title">
+          <span class="tr-lang-flag" id="original-flag">🌐</span>
+          <span id="original-lang-label">Исходник</span>
+          <span class="tr-result-stats" id="original-stats"></span>
+        </div>
+        <div class="tr-result-actions">
+          <button class="btn btn-xs btn-ghost" onclick="copyText('original-textarea')">📋 Копировать</button>
+          <button class="btn btn-xs btn-ghost" onclick="useAsSource('original')">→ В проект</button>
+        </div>
+      </div>
+      <textarea class="tr-textarea" id="original-textarea" readonly
+        placeholder="Транскрипция появится здесь..."></textarea>
+    </div>
+
+    <!-- Translation -->
+    <div class="tr-result-card" id="card-translation">
+      <div class="tr-result-header">
+        <div class="tr-result-title">
+          <span class="tr-lang-flag">🇷🇺</span>
+          <span>Исходник (Русский)</span>
+          <span class="tr-result-stats" id="translation-stats"></span>
+        </div>
+        <div class="tr-result-actions">
+          <button class="btn btn-xs btn-ghost" onclick="copyText('translation-textarea')">📋 Копировать</button>
+          <button class="btn btn-xs btn-accent use-btn" onclick="useAsSource('translation')">→ В проект</button>
+        </div>
+      </div>
+      <textarea class="tr-textarea" id="translation-textarea" readonly
+        placeholder="Перевод появится здесь..."></textarea>
+    </div>
+
+  </div>
+
+  <!-- Use as source modal -->
+  <div class="modal-overlay" id="use-modal" style="display:none" onclick="closeUseModal()">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <div class="modal-title">Добавить в проект</div>
+      <div class="modal-body">
+        <p>Текст будет вставлен как «Исходный текст» в новый проект.</p>
+        <div class="modal-actions">
+          <button class="btn btn-primary" id="btn-new-project">+ Новый проект</button>
+          <button class="btn btn-ghost" onclick="closeUseModal()">Отмена</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="/static/transcribe.js"></script>
+</body>
+</html>

@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title id="page-title">ReWrite Master</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="header-inner">
+    <a class="logo" href="/">⚡ ReWrite Master</a>
+    <div class="header-center">
+      <span id="project-name-display" class="project-name-display" title="Нажмите для переименования"></span>
+      <input id="project-name-input" class="project-name-input" type="text" style="display:none">
+    </div>
+    <div class="header-actions">
+      <a class="btn btn-sm btn-ghost" id="btn-export" href="#">⬇ Экспорт</a>
+      <button class="btn btn-sm btn-danger" id="btn-delete">🗑 Удалить</button>
+    </div>
+  </div>
+</header>
+
+<div class="project-layout">
+
+  <!-- ── LEFT: Settings ──────────────────────────────────────────── -->
+  <aside class="settings-panel">
+
+    <section class="settings-section">
+      <div class="section-header">
+        <span>Исходный текст</span>
+        <span id="source-count" class="meta-count">0 символов</span>
+      </div>
+      <textarea id="source-text" class="textarea-big"
+        placeholder="Вставьте исходный YouTube-скрипт сюда..."></textarea>
+    </section>
+
+    <section class="settings-section">
+      <div class="section-header">Настройки видео</div>
+      <div class="duration-row">
+        <label>
+          <span class="label-text">Длительность</span>
+          <div class="slider-wrap">
+            <input type="range" id="duration-slider" min="1" max="30" value="20">
+            <span id="duration-val" class="slider-val">20 мин</span>
+          </div>
+        </label>
+        <label>
+          <span class="label-text">Симв/мин</span>
+          <input type="number" id="chars-per-min" class="input-small" value="700" min="400" max="1200">
+        </label>
+        <div class="target-chars-info">
+          Цель: <strong id="target-chars-display">14 000</strong> символов
+        </div>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <div class="section-header">
+        <span>Hero Prompt <span class="badge-optional">optional</span></span>
+      </div>
+      <textarea id="hero-prompt" class="textarea-medium"
+        placeholder="Описание голоса / персонажа / стиля подачи..."></textarea>
+    </section>
+
+    <section class="settings-section">
+      <div class="section-header">
+        <span>Master Prompt</span>
+        <button class="btn-lock" id="lock-master" title="Разблокировать для редактирования">🔒</button>
+      </div>
+      <textarea id="master-prompt" class="textarea-medium" readonly></textarea>
+    </section>
+
+  </aside>
+
+  <div class="splitter" id="splitter" title="Потяни чтобы изменить ширину"></div>
+
+  <!-- ── RIGHT: Pipeline ─────────────────────────────────────────── -->
+  <main class="pipeline-panel">
+
+    <div class="pipeline-toolbar">
+      <div class="pipeline-title">Конвейер</div>
+      <div class="pipeline-btns">
+        <button class="btn btn-primary" id="btn-run-all">▶▶ Запустить всё</button>
+        <button class="btn btn-ghost" id="btn-stop" style="display:none">⏹ Стоп</button>
+      </div>
+    </div>
+
+    <!-- Stage 1: Pre-Analysis -->
+    <div class="stage-card" id="card-pre_analysis">
+      <div class="stage-header" onclick="toggleCard('pre_analysis')">
+        <div class="stage-meta">
+          <span class="stage-num">1</span>
+          <span class="stage-name">Pre-Analysis</span>
+          <span class="stage-badge" id="badge-pre_analysis">idle</span>
+        </div>
+        <div class="stage-ctrl">
+          <button class="btn btn-sm btn-accent" id="btn-pre_analysis"
+            onclick="event.stopPropagation(); runStage('pre_analysis')">▶ Запустить</button>
+          <button class="btn btn-sm btn-ghost" id="btn-stop-pre_analysis"
+            style="display:none" onclick="event.stopPropagation(); stopStage('pre_analysis')">⏹ Стоп</button>
+          <span class="card-arrow" id="arrow-pre_analysis">▾</span>
+        </div>
+      </div>
+      <div class="stage-body" id="body-pre_analysis">
+        <div class="hint-line">Вход: исходный текст → Выход: JSON с углами, хуком и “золотом” истории.</div>
+        <div class="prompt-block">
+          <div class="prompt-label">
+            Промпт
+            <button class="btn-lock btn-lock-sm" id="lock-pre_analysis"
+              onclick="toggleLock('pre_analysis')">🔒</button>
+          </div>
+          <textarea class="prompt-textarea" id="prompt-pre_analysis" readonly
+            oninput="onPromptChange('pre_analysis', this.value)"></textarea>
+        </div>
+        <div class="result-block">
+          <div class="result-label">
+            <span>Результат</span>
+            <div class="result-meta">
+              <span class="meta-count" id="count-pre_analysis">0 симв</span>
+              <button class="btn btn-xs btn-ghost" onclick="copyResult('pre_analysis')">📋 Копировать</button>
+            </div>
+          </div>
+          <textarea class="result-textarea" id="result-pre_analysis" readonly
+            placeholder="Запустите этап для получения результата..."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 2: Analysis -->
+    <div class="stage-card" id="card-analysis">
+      <div class="stage-header" onclick="toggleCard('analysis')">
+        <div class="stage-meta">
+          <span class="stage-num">2</span>
+          <span class="stage-name">Analysis</span>
+          <span class="stage-badge" id="badge-analysis">idle</span>
+        </div>
+        <div class="stage-ctrl">
+          <button class="btn btn-sm btn-accent" id="btn-analysis"
+            onclick="event.stopPropagation(); runStage('analysis')">▶ Запустить</button>
+          <button class="btn btn-sm btn-ghost" id="btn-stop-analysis"
+            style="display:none" onclick="event.stopPropagation(); stopStage('analysis')">⏹ Стоп</button>
+          <span class="card-arrow" id="arrow-analysis">▾</span>
+        </div>
+      </div>
+      <div class="stage-body" id="body-analysis">
+        <div class="prompt-block">
+          <div class="prompt-label">
+            Промпт
+            <button class="btn-lock btn-lock-sm" id="lock-analysis"
+              onclick="toggleLock('analysis')">🔒</button>
+          </div>
+          <textarea class="prompt-textarea" id="prompt-analysis" readonly
+            oninput="onPromptChange('analysis', this.value)"></textarea>
+        </div>
+        <div class="result-block">
+          <div class="result-label">
+            <span>Результат</span>
+            <div class="result-meta">
+              <span class="meta-count" id="count-analysis">0 симв</span>
+              <button class="btn btn-xs btn-ghost" onclick="copyResult('analysis')">📋 Копировать</button>
+            </div>
+          </div>
+          <textarea class="result-textarea" id="result-analysis" readonly
+            placeholder="Запустите этап для получения результата..."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 3: Structure -->
+    <div class="stage-card" id="card-structure">
+      <div class="stage-header" onclick="toggleCard('structure')">
+        <div class="stage-meta">
+          <span class="stage-num">3</span>
+          <span class="stage-name">Structure</span>
+          <span class="stage-badge" id="badge-structure">idle</span>
+        </div>
+        <div class="stage-ctrl">
+          <button class="btn btn-sm btn-accent" id="btn-structure"
+            onclick="event.stopPropagation(); runStage('structure')">▶ Запустить</button>
+          <button class="btn btn-sm btn-ghost" id="btn-stop-structure"
+            style="display:none" onclick="event.stopPropagation(); stopStage('structure')">⏹ Стоп</button>
+          <span class="card-arrow" id="arrow-structure">▾</span>
+        </div>
+      </div>
+      <div class="stage-body" id="body-structure">
+        <div class="prompt-block">
+          <div class="prompt-label">
+            Промпт
+            <button class="btn-lock btn-lock-sm" id="lock-structure"
+              onclick="toggleLock('structure')">🔒</button>
+          </div>
+          <textarea class="prompt-textarea" id="prompt-structure" readonly
+            oninput="onPromptChange('structure', this.value)"></textarea>
+        </div>
+        <div class="result-block">
+          <div class="result-label">
+            <span>Результат</span>
+            <div class="result-meta">
+              <span class="meta-count" id="count-structure">0 симв</span>
+              <button class="btn btn-xs btn-ghost" onclick="copyResult('structure')">📋 Копировать</button>
+            </div>
+          </div>
+          <textarea class="result-textarea" id="result-structure" readonly
+            placeholder="Запустите этап для получения результата..."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 4: Block Writer -->
+    <div class="stage-card" id="card-block_writer">
+      <div class="stage-header" onclick="toggleCard('block_writer')">
+        <div class="stage-meta">
+          <span class="stage-num">4</span>
+          <span class="stage-name">Block Writer</span>
+          <span class="stage-badge" id="badge-block_writer">idle</span>
+        </div>
+        <div class="stage-ctrl">
+          <button class="btn btn-sm btn-accent" id="btn-block_writer"
+            onclick="event.stopPropagation();">▶ Все блоки</button>
+          <button class="btn btn-sm btn-ghost" id="btn-stop-block_writer"
+            style="display:none" onclick="event.stopPropagation(); stopStage('block_writer')">⏹ Стоп</button>
+          <span class="card-arrow" id="arrow-block_writer">▾</span>
+        </div>
+      </div>
+      <div class="stage-body" id="body-block_writer">
+
+        <!-- ── Block Plan editor ─────────────────────── -->
+        <div id="block-plan-container" style="display:none">
+          <div class="plan-header">
+            <span class="plan-title">📐 План блоков</span>
+            <div class="plan-actions">
+              <span class="plan-sum" id="plan-sum">0 / 0</span>
+              <button class="btn btn-xs btn-ghost" onclick="rebalanceBlocks()" title="Пересчитать пропорционально">↺ Выровнять</button>
+            </div>
+          </div>
+          <div class="plan-table-wrap">
+            <table class="plan-table" id="plan-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Название</th>
+                  <th>Роль</th>
+                  <th>Цель, симв</th>
+                  <th>Написано</th>
+                  <th>Δ</th>
+                </tr>
+              </thead>
+              <tbody id="plan-tbody"></tbody>
+              <tfoot>
+                <tr class="plan-total-row">
+                  <td colspan="3">Итого</td>
+                  <td><span id="plan-total-target">0</span></td>
+                  <td><span id="plan-total-written">—</span></td>
+                  <td><span id="plan-total-delta"></span></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        <!-- ── Progress bar ──────────────────────────── -->
+        <div class="block-progress-wrap" id="block-progress-wrap" style="display:none">
+          <div class="block-progress-label" id="block-progress-label">Блок 0 из 0</div>
+          <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+          </div>
+        </div>
+
+        <div class="prompt-block">
+          <div class="prompt-label">
+            Промпт блока
+            <button class="btn-lock btn-lock-sm" id="lock-block_writer"
+              onclick="toggleLock('block_writer')">🔒</button>
+          </div>
+          <textarea class="prompt-textarea" id="prompt-block_writer" readonly
+            oninput="onPromptChange('block_writer', this.value)"></textarea>
+        </div>
+        <div class="result-block">
+          <div class="result-label">
+            <span>Блоки <span id="blocks-count-label" style="color:var(--text-d);font-weight:400"></span></span>
+            <div class="result-meta">
+              <span class="meta-count" id="count-block_writer">0 симв</span>
+              <button class="btn btn-xs btn-ghost" onclick="expandAllBlocks()">↕ Развернуть все</button>
+              <button class="btn btn-xs btn-ghost" onclick="collapseAllBlocks()">↕ Свернуть все</button>
+              <button class="btn btn-xs btn-ghost" onclick="copyResult('block_writer')">📋 Копировать всё</button>
+            </div>
+          </div>
+          <!-- live block cards shown during/after generation -->
+          <div class="blocks-container" id="blocks-container"></div>
+          <!-- hidden textarea holds combined text for copy/export -->
+          <textarea class="result-textarea" id="result-block_writer" readonly
+            style="display:none"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 5: Merger -->
+    <div class="stage-card" id="card-merger">
+      <div class="stage-header" onclick="toggleCard('merger')">
+        <div class="stage-meta">
+          <span class="stage-num">5</span>
+          <span class="stage-name">Merger</span>
+          <span class="stage-badge" id="badge-merger">idle</span>
+        </div>
+        <div class="stage-ctrl">
+          <button class="btn btn-sm btn-accent" id="btn-merger"
+            onclick="event.stopPropagation(); runStage('merger')">▶ Запустить</button>
+          <button class="btn btn-sm btn-ghost" id="btn-stop-merger"
+            style="display:none" onclick="event.stopPropagation(); stopStage('merger')">⏹ Стоп</button>
+          <span class="card-arrow" id="arrow-merger">▾</span>
+        </div>
+      </div>
+      <div class="stage-body" id="body-merger">
+        <div class="prompt-block">
+          <div class="prompt-label">
+            Промпт
+            <button class="btn-lock btn-lock-sm" id="lock-merger"
+              onclick="toggleLock('merger')">🔒</button>
+          </div>
+          <textarea class="prompt-textarea" id="prompt-merger" readonly
+            oninput="onPromptChange('merger', this.value)"></textarea>
+        </div>
+        <div class="result-block">
+          <div class="result-label">
+            <span>Результат</span>
+            <div class="result-meta">
+              <span class="meta-count" id="count-merger">0 симв</span>
+              <button class="btn btn-xs btn-ghost" onclick="copyResult('merger')">📋 Копировать</button>
+            </div>
+          </div>
+          <textarea class="result-textarea result-textarea-tall" id="result-merger" readonly
+            placeholder="Запустите этап для получения результата..."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 6: Quality Check -->
+    <div class="stage-card" id="card-quality_check">
+      <div class="stage-header" onclick="toggleCard('quality_check')">
+        <div class="stage-meta">
+          <span class="stage-num">6</span>
+          <span class="stage-name">Quality Check</span>
+          <span class="stage-badge" id="badge-quality_check">idle</span>
+        </div>
+        <div class="stage-ctrl">
+          <button class="btn btn-sm btn-accent" id="btn-quality_check"
+            onclick="event.stopPropagation(); runStage('quality_check')">▶ Запустить</button>
+          <button class="btn btn-sm btn-ghost" id="btn-stop-quality_check"
+            style="display:none" onclick="event.stopPropagation(); stopStage('quality_check')">⏹ Стоп</button>
+          <span class="card-arrow" id="arrow-quality_check">▾</span>
+        </div>
+      </div>
+      <div class="stage-body" id="body-quality_check">
+        <div class="hint-line">Вход: оригинал + Merger → Выход: JSON score/issues/approved.</div>
+        <div class="prompt-block">
+          <div class="prompt-label">
+            Промпт
+            <button class="btn-lock btn-lock-sm" id="lock-quality_check"
+              onclick="toggleLock('quality_check')">🔒</button>
+          </div>
+          <textarea class="prompt-textarea" id="prompt-quality_check" readonly
+            oninput="onPromptChange('quality_check', this.value)"></textarea>
+        </div>
+        <div class="result-block">
+          <div class="result-label">
+            <span>Результат</span>
+            <div class="result-meta">
+              <span class="meta-count" id="count-quality_check">0 симв</span>
+              <button class="btn btn-xs btn-ghost" onclick="copyResult('quality_check')">📋 Копировать</button>
+            </div>
+          </div>
+          <textarea class="result-textarea" id="result-quality_check" readonly
+            placeholder="Запустите этап для получения результата..."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 7: Final -->
+    <div class="stage-card" id="card-final">
+      <div class="stage-header" onclick="toggleCard('final')">
+        <div class="stage-meta">
+          <span class="stage-num">7</span>
+          <span class="stage-name">Final</span>
+          <span class="stage-badge" id="badge-final">idle</span>
+        </div>
+        <div class="stage-ctrl">
+          <button class="btn btn-sm btn-accent" id="btn-final"
+            onclick="event.stopPropagation(); runStage('final')">▶ Запустить</button>
+          <button class="btn btn-sm btn-ghost" id="btn-stop-final"
+            style="display:none" onclick="event.stopPropagation(); stopStage('final')">⏹ Стоп</button>
+          <span class="card-arrow" id="arrow-final">▾</span>
+        </div>
+      </div>
+      <div class="stage-body" id="body-final">
+        <div class="prompt-block">
+          <div class="prompt-label">
+            Промпт
+            <button class="btn-lock btn-lock-sm" id="lock-final"
+              onclick="toggleLock('final')">🔒</button>
+          </div>
+          <textarea class="prompt-textarea" id="prompt-final" readonly
+            oninput="onPromptChange('final', this.value)"></textarea>
+        </div>
+        <div class="result-block">
+          <div class="result-label">
+            <span>Финальный скрипт</span>
+            <div class="result-meta">
+              <span class="meta-count" id="count-final">0 симв</span>
+              <button class="btn btn-xs btn-ghost" onclick="copyResult('final')">📋 Копировать</button>
+            </div>
+          </div>
+          <textarea class="result-textarea result-textarea-tall" id="result-final" readonly
+            placeholder="Финальный скрипт с таймингами появится здесь..."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 8: Scene Builder -->
+    <div class="stage-card" id="card-humanize_tts">
+      <div class="stage-header" onclick="toggleCard('humanize_tts')">
+        <div class="stage-meta">
+          <span class="stage-num">8</span>
+          <span class="stage-name">Humanize TTS</span>
+          <span class="stage-badge" id="badge-humanize_tts">idle</span>
+        </div>
+        <div class="stage-ctrl">
+          <button class="btn btn-sm btn-accent" id="btn-humanize_tts"
+            onclick="event.stopPropagation(); runStage('humanize_tts')">▶ Запустить</button>
+          <button class="btn btn-sm btn-ghost" id="btn-stop-humanize_tts"
+            style="display:none" onclick="event.stopPropagation(); stopStage('humanize_tts')">⏹ Стоп</button>
+          <span class="card-arrow" id="arrow-humanize_tts">▾</span>
+        </div>
+      </div>
+      <div class="stage-body" id="body-humanize_tts">
+        <div class="hint-line">
+          Ручной этап: нормализация и теги ElevenLabs для интонации.
+          <label style="margin-left:10px">
+            Режим:
+            <select id="humanize-mode" class="input-small" style="margin-left:6px">
+              <option value="min">min</option>
+              <option value="norm" selected>norm</option>
+              <option value="max">max</option>
+            </select>
+          </label>
+        </div>
+        <div class="prompt-block">
+          <div class="prompt-label">
+            Промпт
+            <button class="btn-lock btn-lock-sm" id="lock-humanize_tts"
+              onclick="toggleLock('humanize_tts')">🔒</button>
+          </div>
+          <textarea class="prompt-textarea" id="prompt-humanize_tts" readonly
+            oninput="onPromptChange('humanize_tts', this.value)"></textarea>
+        </div>
+        <div class="result-block">
+          <div class="result-label">
+            <span>Результат для ElevenLabs</span>
+            <div class="result-meta">
+              <span class="meta-count" id="count-humanize_tts">0 симв</span>
+              <button class="btn btn-xs btn-ghost" onclick="copyResult('humanize_tts')">📋 Копировать</button>
+              <a class="btn btn-xs btn-ghost" id="btn-export-tts"
+                href="/project/{{ project.id }}/export_tts">⬇ Скачать .txt</a>
+            </div>
+          </div>
+          <textarea class="result-textarea result-textarea-tall" id="result-humanize_tts" readonly
+            placeholder="Запустите Humanize TTS — появится текст с тэгами/пунктуацией..."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stage 9: Scene Builder -->
+    <div class="stage-card" id="card-scene_builder">
+      <div class="stage-header" onclick="toggleCard('scene_builder')">
+        <div class="stage-meta">
+          <span class="stage-num">9</span>
+          <span class="stage-name">Scene Builder</span>
+          <span class="stage-badge" id="badge-scene_builder">idle</span>
+        </div>
+        <div class="stage-ctrl">
+          <button class="btn btn-sm btn-accent" id="btn-scene_builder"
+            onclick="event.stopPropagation(); runSceneBuilder()">▶ Запустить Scene Builder</button>
+          <button class="btn btn-sm btn-ghost" id="btn-stop-scene_builder"
+            style="display:none" onclick="event.stopPropagation(); stopStage('scene_builder')">⏹ Стоп</button>
+          <span class="card-arrow" id="arrow-scene_builder">▾</span>
+        </div>
+      </div>
+      <div class="stage-body" id="body-scene_builder">
+
+        <!-- Scene duration slider -->
+        <div class="sb-duration-row">
+          <label class="sb-duration-label" for="scene-duration-slider">Длина сцены</label>
+          <input type="range" id="scene-duration-slider"
+            min="3" max="12" step="1" value="6"
+            oninput="onSceneDurationChange(this.value)">
+          <span class="sb-duration-val" id="scene-duration-val">6 сек / сцена</span>
+          <span class="sb-chars-hint" id="scene-chars-hint"></span>
+        </div>
+
+        <!-- Prompt -->
+        <div class="prompt-block">
+          <div class="prompt-label">
+            Промпт
+            <button class="btn-lock btn-lock-sm" id="lock-scene_builder"
+              onclick="toggleLock('scene_builder')">🔒</button>
+            <button class="btn btn-xs btn-ghost" style="margin-left:6px"
+              onclick="resetSceneBuilderPrompt()">↺ Сбросить промпт</button>
+          </div>
+          <textarea class="prompt-textarea" id="prompt-scene_builder" readonly
+            oninput="onPromptChange('scene_builder', this.value)"></textarea>
+        </div>
+
+        <!-- Result -->
+        <div class="result-block">
+          <div class="result-label">
+            <span>NDJSON <span class="sb-scene-count" id="scene-count-label"></span></span>
+            <div class="result-meta">
+              <span class="meta-count" id="count-scene_builder">0 симв</span>
+              <button class="btn btn-xs btn-ghost" onclick="copyResult('scene_builder')">📋 Копировать</button>
+              <a class="btn btn-xs btn-ghost" id="btn-export-scenes"
+                href="/project/{{ project.id }}/export_scenes"
+                style="display:none">⬇ Скачать .ndjson</a>
+            </div>
+          </div>
+          <textarea class="result-textarea result-textarea-tall" id="result-scene_builder" readonly
+            placeholder="Запустите Scene Builder — появится NDJSON со сценами..."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="log-section">
+      <div class="log-header">
+        <span>Лог выполнения</span>
+        <button class="btn btn-xs btn-ghost" onclick="clearLog()">Очистить</button>
+      </div>
+      <div class="log-body" id="log-body"></div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  window.PROJECT_DATA = {{ project | tojson | safe }};
+  window.PROJECT_ID   = "{{ project.id }}";
+</script>
+<script src="/static/main.js"></script>
+</body>
+</html>

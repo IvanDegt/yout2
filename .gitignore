@@ -1,0 +1,15 @@
+.env
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.DS_Store
+
+# Runtime data
+projects/*.json
+projects/
+
+# Editor/tooling
+.idea/
+.vscode/
