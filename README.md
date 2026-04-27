@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-# yout2
-=======
 # ReWrite Master
 
 Local web app for long-form YouTube script rewriting, polishing, scene generation, and TTS-ready normalization.
@@ -85,6 +82,7 @@ rewrite-app/
 - `docs/ARCHITECTURE.md` - system architecture, data model, runtime behavior.
 - `docs/PIPELINE.md` - exact stage contracts and flow.
 - `docs/API.md` - HTTP endpoints and stream protocol details.
+- `docs/DEPLOY_UBUNTU_VENV.md` - production deploy on Ubuntu 22.04 (venv, Gunicorn, systemd, UFW).
 
 ## Security and Local Data
 
@@ -98,4 +96,3 @@ rewrite-app/
 - Stage temperatures live in `config.py`.
 - Streaming is NDJSON (`type=status|delta|replace|result|error`).
 - Keep manual stages manual unless product decision changes.
->>>>>>> 78d51fe (Initialize ReWrite Master with full pipeline and docs)
