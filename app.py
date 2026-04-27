@@ -558,19 +558,129 @@ def run_stage(pid):
 
                 final_text = _preprocess_final_text(final_text)
 
-                # ── Fix "null" string → JSON null in video/end prompts ──────────
-                def _fix_null_strings(line):
-                    try:
-                        obj = json.loads(line)
-                        if 'video' in obj and isinstance(obj['video'], dict):
-                            if obj['video'].get('prompt') == 'null':
-                                obj['video']['prompt'] = None
-                        if 'end' in obj and isinstance(obj['end'], dict):
-                            if obj['end'].get('prompt') == 'null':
-                                obj['end']['prompt'] = None
-                        return json.dumps(obj, ensure_ascii=False)
-                    except Exception:
-                        return line
+                # ── NDJSON hygiene: parse, validate, normalize at scene level ───
+                def _norm_prompt_val(v):
+                    if v is None:
+                        return None
+                    if not isinstance(v, str):
+                        return None
+                    s = v.strip()
+                    if not s:
+                        return None
+                    if s.lower() == "null":
+                        return None
+                    return s
+
+                def _is_meaningful_text(s):
+                    if not isinstance(s, str):
+                        return False
+                    t = s.strip()
+                    if not t:
+                        return False
+                    # Ignore pure time marks accidentally emitted as scene text
+                    if _re.match(r'^\[\d+:\d+\]$', t):
+                        return False
+                    return True
+
+                def _explode_json_candidates(raw):
+                    """
+                    Split raw model output into JSON object candidates.
+                    Handles glued objects like `}{` and line breaks.
+                    """
+                    candidates = []
+                    for line in raw.split('\n'):
+                        line = line.strip()
+                        if not line:
+                            continue
+                        parts = _re.split(r'(?<=\})\s*(?=\{)', line)
+                        for p in parts:
+                            p = p.strip()
+                            if p:
+                                candidates.append(p)
+                    return candidates
+
+                def _parse_scene_blocks(raw):
+                    """
+                    Parse NDJSON-like scene stream into normalized scene dicts.
+                    Scene shape:
+                      {"scene_id": "...", "text": "...", "start":{"prompt":...}, "end":..., "video":...}
+                    """
+                    objs = []
+                    for cand in _explode_json_candidates(raw):
+                        try:
+                            objs.append(json.loads(cand))
+                        except Exception:
+                            continue
+
+                    scenes = []
+                    cur = None
+                    dropped_empty = 0
+
+                    def _finalize(scene):
+                        nonlocal dropped_empty
+                        if not scene:
+                            return
+                        txt = (scene.get("text") or "").strip()
+                        if not _is_meaningful_text(txt):
+                            dropped_empty += 1
+                            return
+
+                        start_p = _norm_prompt_val(((scene.get("start") or {}).get("prompt")))
+                        end_p = _norm_prompt_val(((scene.get("end") or {}).get("prompt")))
+                        video_p = _norm_prompt_val(((scene.get("video") or {}).get("prompt")))
+
+                        # Keep pipeline robust: if text exists but start prompt is absent,
+                        # synthesize a safe fallback prompt instead of dropping content.
+                        if start_p is None:
+                            fallback = txt[:220].replace('\n', ' ')
+                            start_p = (
+                                "Flat 2D stick-figure scene, bold outlines, "
+                                f"illustrate: {fallback}"
+                            )
+
+                        scenes.append({
+                            "scene_id": str(scene.get("scene_id") or "").strip() or "scene_000",
+                            "text": txt,
+                            "start": {"prompt": start_p},
+                            "end": {"prompt": end_p},
+                            "video": {"prompt": video_p},
+                        })
+
+                    for obj in objs:
+                        if "scene_id" in obj:
+                            _finalize(cur)
+                            cur = {
+                                "scene_id": obj.get("scene_id"),
+                                "text": "",
+                                "start": {"prompt": None},
+                                "end": {"prompt": None},
+                                "video": {"prompt": None},
+                            }
+                            continue
+                        if cur is None:
+                            continue
+                        if "text" in obj:
+                            cur["text"] = obj.get("text")
+                        if "start" in obj and isinstance(obj.get("start"), dict):
+                            cur["start"] = {"prompt": obj["start"].get("prompt")}
+                        if "end" in obj and isinstance(obj.get("end"), dict):
+                            cur["end"] = {"prompt": obj["end"].get("prompt")}
+                        if "video" in obj and isinstance(obj.get("video"), dict):
+                            cur["video"] = {"prompt": obj["video"].get("prompt")}
+
+                    _finalize(cur)
+                    return scenes, dropped_empty
+
+                def _serialize_scenes_ndjson(scenes):
+                    out_lines = []
+                    for i, sc in enumerate(scenes, start=1):
+                        sid = f"scene_{i:03d}"
+                        out_lines.append(json.dumps({"scene_id": sid}, ensure_ascii=False))
+                        out_lines.append(json.dumps({"text": sc["text"]}, ensure_ascii=False))
+                        out_lines.append(json.dumps({"start": {"prompt": sc["start"]["prompt"]}}, ensure_ascii=False))
+                        out_lines.append(json.dumps({"end": {"prompt": sc["end"]["prompt"]}}, ensure_ascii=False))
+                        out_lines.append(json.dumps({"video": {"prompt": sc["video"]["prompt"]}}, ensure_ascii=False))
+                    return "\n".join(out_lines)
 
                 # ── Video distribution helpers ──────────────────────────────────
                 def _scene_zone(idx, total):
@@ -608,8 +718,9 @@ def run_stage(pid):
                 # Estimate total scenes across all chunks for zone calculation
                 total_scenes_est = max(1, len(final_text) // max(chars_per_scene, 1))
 
-                full_content = ""
-                scene_num    = 1  # 1-based global scene counter
+                all_scenes = []
+                scene_num  = 1  # target id for next chunk start
+                total_dropped_empty = 0
 
                 for ci, chunk_text in enumerate(chunks):
                     # How many scenes expected in this chunk
@@ -661,28 +772,28 @@ def run_stage(pid):
                             chunk_raw += delta
                             yield emit({"type": "delta", "content": delta})
 
-                    # Fix "null" strings and strip empty lines from this chunk
-                    fixed_lines = []
-                    for line in chunk_raw.split('\n'):
-                        line = line.strip()
-                        if not line:
-                            continue
-                        fixed_lines.append(_fix_null_strings(line))
+                    # Parse + sanitize chunk scenes
+                    chunk_scenes, dropped_empty = _parse_scene_blocks(chunk_raw)
+                    total_dropped_empty += dropped_empty
+                    all_scenes.extend(chunk_scenes)
+                    scene_num = len(all_scenes) + 1
+                    yield emit({
+                        "type": "status",
+                        "message": (
+                            f"Часть {ci+1}/{n_chunks}: валидных сцен {len(chunk_scenes)}, "
+                            f"отброшено пустых {dropped_empty}"
+                        ),
+                    })
 
-                    chunk_clean = '\n'.join(fixed_lines)
-                    if full_content:
-                        full_content += '\n' + chunk_clean
-                    else:
-                        full_content = chunk_clean
-
-                    # Advance scene_num by counting scene_id lines produced
-                    for line in fixed_lines:
-                        try:
-                            obj = json.loads(line)
-                            if 'scene_id' in obj:
-                                scene_num += 1
-                        except Exception:
-                            pass
+                # Final renumber + serialize
+                full_content = _serialize_scenes_ndjson(all_scenes)
+                yield emit({
+                    "type": "status",
+                    "message": (
+                        f"Scene Builder sanitize: итог {len(all_scenes)} сцен, "
+                        f"удалено пустых {total_dropped_empty}"
+                    ),
+                })
 
                 # Persist and finish
                 fresh = _load(pid)
