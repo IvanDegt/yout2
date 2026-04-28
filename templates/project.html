@@ -39,6 +39,13 @@
       <div class="section-header">Настройки видео</div>
       <div class="duration-row">
         <label>
+          <span class="label-text">Длительность</span>
+          <div class="slider-wrap">
+            <input type="range" id="duration-slider" min="1" max="60" value="20">
+            <span id="duration-val" class="slider-val">20 мин</span>
+          </div>
+        </label>
+        <label>
           <span class="label-text">Симв/мин</span>
           <input type="number" id="chars-per-min" class="input-small" value="700" min="400" max="1200">
         </label>
@@ -49,6 +56,9 @@
             <option value="en">English (700 chars/min)</option>
           </select>
         </label>
+        <div class="target-chars-info">
+          Цель: <strong id="target-chars-display">14 000</strong> символов
+        </div>
       </div>
     </section>
 

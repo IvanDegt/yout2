@@ -404,7 +404,13 @@ def run_stage(pid):
                 yield emit({"type": "error", "message": "OPENAI_API_KEY не задан. Добавьте его в .env"})
                 return
 
-            client = openai.OpenAI(api_key=api_key)
+            proxy_url = os.getenv("OPENAI_PROXY", "")
+            if proxy_url:
+                import httpx as _httpx
+                _http_client = _httpx.Client(proxy=proxy_url, timeout=300)
+                client = openai.OpenAI(api_key=api_key, http_client=_http_client)
+            else:
+                client = openai.OpenAI(api_key=api_key)
             model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
             temperature = float(STAGE_TEMPERATURES.get(stage, 0.4))
 
@@ -1014,7 +1020,9 @@ def transcribe_run():
                 yield emit({"type": "error", "message": "Ссылка не похожа на YouTube URL"})
                 return
 
-            client = openai.OpenAI(api_key=api_key)
+            _px = os.getenv("OPENAI_PROXY", "")
+            client = openai.OpenAI(api_key=api_key,
+                                   http_client=__import__('httpx').Client(proxy=_px, timeout=300) if _px else None)
             model  = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
 
             # Resolve yt-dlp: prefer venv binary, then PATH
@@ -1284,7 +1292,9 @@ def translate_run():
 
             lang_name = TRANSLATE_LANGS.get(target_lang, target_lang)
 
-            client = openai.OpenAI(api_key=api_key)
+            _px = os.getenv("OPENAI_PROXY", "")
+            client = openai.OpenAI(api_key=api_key,
+                                   http_client=__import__('httpx').Client(proxy=_px, timeout=300) if _px else None)
             model  = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
 
             stream = client.chat.completions.create(

@@ -191,9 +191,11 @@ function renderAll() {
   $('source-text').value     = P.source_text || '';
   $('master-prompt').value   = P.master_prompt || '';
   $('hero-prompt').value     = P.hero_prompt || '';
+  $('duration-slider').value = P.duration_minutes || 20;
   $('chars-per-min').value   = P.chars_per_minute || 700;
   $('humanize-mode').value   = P.humanize_mode || 'norm';
   $('voice-language-select').value = P.voice_language || 'ru';
+  updateDurationDisplay();
   updateSourceCount();
 
   ['pre_analysis', 'analysis', 'structure', 'merger', 'quality_check', 'final', 'humanize_tts', 'scene_builder'].forEach(stage => {
@@ -238,6 +240,13 @@ function setTitle(name) {
   if (d) { d.textContent = name; document.title = `${name} — ReWrite Master`; }
 }
 
+
+function updateDurationDisplay() {
+  const min = parseInt($('duration-slider').value) || 20;
+  const cpm = parseInt($('chars-per-min').value) || 700;
+  $('duration-val').textContent = `${min} мин`;
+  $('target-chars-display').textContent = (min * cpm).toLocaleString('ru-RU');
+}
 
 function updateSourceCount() {
   const len = ($('source-text').value || '').length;
@@ -1102,6 +1111,13 @@ function setupEventListeners() {
   // Hero prompt
   $('hero-prompt').addEventListener('input', e => {
     P.hero_prompt = e.target.value;
+    scheduleSave();
+  });
+
+  // Duration slider
+  $('duration-slider').addEventListener('input', e => {
+    P.duration_minutes = parseInt(e.target.value);
+    updateDurationDisplay();
     scheduleSave();
   });
 
