@@ -69,7 +69,7 @@ Backend may force exact target length as last guardrail.
   - `scene_id`
   - `text`
   - `start.prompt`
-  - `end.prompt`
+  - `end.prompt` (required)
   - `video.prompt`
 - **Goal:** handoff to visual production pipeline
 

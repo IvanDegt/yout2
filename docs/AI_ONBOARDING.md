@@ -26,6 +26,7 @@ Do not treat this as a simple prompt playground:
 - Stage outputs are persisted under `project.stages[stage].result`.
 - `block_writer` additionally uses `project.stages.block_writer.blocks[]`.
 - Streaming protocol is NDJSON with typed events.
+- Scene Builder contract: for non-empty scene text, both `start.prompt` and `end.prompt` must be present (end is not optional).
 
 If you add/rename a stage, update **all** of:
 

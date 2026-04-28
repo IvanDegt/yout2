@@ -61,6 +61,12 @@ Main fields:
 - **Core rewrite stages:** `pre_analysis`, `analysis`, `structure`, `block_writer`, `merger`, `quality_check`, `final`
 - **Manual post stages:** `humanize_tts`, `scene_builder`
 
+Scene Builder output is treated as a strict handoff contract:
+- `text` (exact scene narration)
+- `start.prompt` (start frame)
+- `end.prompt` (required end frame of the same scene)
+- `video.prompt` (optional motion from start to end)
+
 Manual stages are separate to enable controlled A/B testing and selective reruns.
 
 ## Error Handling Strategy

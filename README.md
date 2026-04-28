@@ -22,7 +22,7 @@ The project is designed for iterative content production where each stage is exp
 6. `quality_check` - validates fidelity/retention/length constraints.
 7. `final` - final script formatting and timing alignment.
 8. `humanize_tts` (manual) - ElevenLabs-style expressive pass.
-9. `scene_builder` (manual) - NDJSON scene export with image/video prompts.
+9. `scene_builder` (manual) - NDJSON scene export with `start.prompt`, required `end.prompt`, and `video.prompt`.
 
 `Run All` includes the main rewrite pipeline. `humanize_tts` and `scene_builder` are intentionally manual for controlled testing.
 

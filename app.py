@@ -2,6 +2,7 @@ import os
 import json
 import io
 import re
+import time
 import tempfile
 import subprocess
 from datetime import datetime
@@ -408,9 +409,9 @@ def run_stage(pid):
             if proxy_url:
                 import httpx as _httpx
                 _http_client = _httpx.Client(proxy=proxy_url, timeout=300)
-                client = openai.OpenAI(api_key=api_key, http_client=_http_client)
+                client = openai.OpenAI(api_key=api_key, http_client=_http_client, timeout=300)
             else:
-                client = openai.OpenAI(api_key=api_key)
+                client = openai.OpenAI(api_key=api_key, timeout=300)
             model = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
             temperature = float(STAGE_TEMPERATURES.get(stage, 0.4))
 
@@ -658,6 +659,22 @@ def run_stage(pid):
 
                     scenes, cur = [], None
 
+                    def _build_end_prompt(start_prompt: str, text: str) -> str:
+                        """
+                        Ensure end prompt is always present.
+                        Keep it as a final-frame continuation of the same scene.
+                        """
+                        base = (start_prompt or "").strip()
+                        if base:
+                            return (
+                                f"{base.rstrip('.')} , final frame of the same scene, "
+                                "state after the action settles, flat 2D animation style"
+                            )
+                        return (
+                            "Flat 2D stick-figure final frame of the same scene, "
+                            f"showing the end state after: {text[:180].replace(chr(10), ' ')}"
+                        )
+
                     def _fin(scene):
                         if not scene: return
                         sid  = str(scene.get("scene_id") or "").strip()
@@ -667,11 +684,14 @@ def run_stage(pid):
                         if sp is None:
                             sp = ("Flat 2D stick-figure scene, bold outlines, illustrate: "
                                   + text[:200].replace('\n', ' '))
+                        ep = _norm_prompt_val((scene.get("end") or {}).get("prompt"))
+                        if ep is None:
+                            ep = _build_end_prompt(sp, text)
                         scenes.append({
                             "scene_id": sid,
                             "text": text,
                             "start": {"prompt": sp},
-                            "end":   {"prompt": _norm_prompt_val((scene.get("end")   or {}).get("prompt"))},
+                            "end":   {"prompt": ep},
                             "video": {"prompt": _norm_prompt_val((scene.get("video") or {}).get("prompt"))},
                         })
 
@@ -810,9 +830,13 @@ def run_stage(pid):
                         if sid not in returned_ids:
                             sp = ("Flat 2D stick-figure scene, bold outlines, illustrate: "
                                   + stxt[:200].replace('\n', ' '))
+                            ep = (
+                                f"{sp.rstrip('.')} , final frame of the same scene, "
+                                "state after the action settles, flat 2D animation style"
+                            )
                             chunk_scenes.append({"scene_id": sid, "text": stxt,
                                                  "start": {"prompt": sp},
-                                                 "end":   {"prompt": None},
+                                                 "end":   {"prompt": ep},
                                                  "video": {"prompt": None}})
                             total_dropped_empty += 1
 
@@ -1021,8 +1045,8 @@ def transcribe_run():
                 return
 
             _px = os.getenv("OPENAI_PROXY", "")
-            client = openai.OpenAI(api_key=api_key,
-                                   http_client=__import__('httpx').Client(proxy=_px, timeout=300) if _px else None)
+            _http_client = __import__('httpx').Client(proxy=_px, timeout=300) if _px else None
+            client = openai.OpenAI(api_key=api_key, http_client=_http_client, timeout=300)
             model  = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
 
             # Resolve yt-dlp: prefer venv binary, then PATH
@@ -1120,11 +1144,9 @@ def transcribe_run():
             # Split into chunks if file exceeds Whisper limit
             audio_chunks = []
             if file_size > WHISPER_LIMIT:
-                # Calculate chunk duration: aim for ~20 MB chunks
-                # At audio quality 5 (~80 kbps), 1 min ≈ 0.6 MB → 20 MB ≈ 33 min, use 20 min chunks
-                chunk_seconds = 20 * 60  # 20 minutes per chunk
-                n_chunks = max(2, int(file_size / WHISPER_LIMIT) + 1)
-                chunk_seconds = max(600, (video_duration or 1800) // n_chunks)
+                # Fixed chunk size for reliability on long videos: 12 minutes.
+                # Smaller chunks reduce long hanging requests and transient 5xx errors.
+                chunk_seconds = 12 * 60
 
                 yield emit({"type": "step", "step": 3,
                             "message": f"Файл {file_size_mb:.1f} МБ — разбиваем на части по {chunk_seconds//60} мин..."})
@@ -1167,12 +1189,47 @@ def transcribe_run():
                     chunk_mb = os.path.getsize(chunk_path) / 1024 / 1024
                     yield emit({"type": "step", "step": 3,
                                 "message": f"Часть {i+1}/{len(audio_chunks)} ({chunk_mb:.1f} МБ)..."})
-                with open(chunk_path, "rb") as f:
-                    chunk_transcript = client.audio.transcriptions.create(
-                        model="whisper-1",
-                        file=f,
-                        response_format="verbose_json",
-                    )
+                chunk_transcript = None
+                last_err = None
+                for attempt in range(1, 4):
+                    try:
+                        with open(chunk_path, "rb") as f:
+                            chunk_transcript = client.audio.transcriptions.create(
+                                model="whisper-1",
+                                file=f,
+                                response_format="verbose_json",
+                            )
+                        last_err = None
+                        break
+                    except openai.AuthenticationError:
+                        raise
+                    except Exception as e:
+                        last_err = e
+                        msg = str(e)
+                        is_retryable = (
+                            "Error code: 500" in msg
+                            or "Error code: 502" in msg
+                            or "Error code: 503" in msg
+                            or "Error code: 504" in msg
+                            or "timed out" in msg.lower()
+                            or "timeout" in msg.lower()
+                        )
+                        if attempt < 3 and is_retryable:
+                            wait_s = attempt * 2
+                            yield emit({
+                                "type": "step",
+                                "step": 3,
+                                "message": (
+                                    f"Whisper временно недоступен (попытка {attempt}/3). "
+                                    f"Повтор через {wait_s}с..."
+                                ),
+                            })
+                            time.sleep(wait_s)
+                            continue
+                        break
+
+                if chunk_transcript is None:
+                    raise last_err if last_err else RuntimeError("Whisper transcription failed")
                 chunk_text = chunk_transcript.text or ""
                 if i == 0:
                     detected_lang = getattr(chunk_transcript, "language", "unknown") or "unknown"
@@ -1293,8 +1350,8 @@ def translate_run():
             lang_name = TRANSLATE_LANGS.get(target_lang, target_lang)
 
             _px = os.getenv("OPENAI_PROXY", "")
-            client = openai.OpenAI(api_key=api_key,
-                                   http_client=__import__('httpx').Client(proxy=_px, timeout=300) if _px else None)
+            _http_client = __import__('httpx').Client(proxy=_px, timeout=300) if _px else None
+            client = openai.OpenAI(api_key=api_key, http_client=_http_client, timeout=300)
             model  = os.getenv("OPENAI_MODEL", DEFAULT_MODEL)
 
             stream = client.chat.completions.create(

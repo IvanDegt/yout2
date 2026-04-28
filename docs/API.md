@@ -38,6 +38,7 @@ Base URL (local): `http://localhost:5002`
 - `scene_builder`:
   - `scene_duration_seconds`
   - `chars_per_scene` (advisory)
+  - output contract includes non-empty `start.prompt` and non-empty `end.prompt` for non-empty scene text
 - `humanize_tts`:
   - `humanize_mode` = `min|norm|max`
 
