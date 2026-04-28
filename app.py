@@ -185,6 +185,9 @@ def _load(project_id: str) -> dict | None:
     if "scene_duration_seconds" not in project:
         project["scene_duration_seconds"] = 6
         changed = True
+    if "voice_language" not in project:
+        project["voice_language"] = "ru"
+        changed = True
     if "humanize_mode" not in project:
         project["humanize_mode"] = "norm"
         changed = True
@@ -239,6 +242,7 @@ def new_project():
         "duration_minutes": 20,
         "chars_per_minute": 700,
         "scene_duration_seconds": 6,
+        "voice_language": "ru",
         "humanize_mode": "norm",
         "stages": {
             "pre_analysis":  {"prompt": _load_prompt("pre_analysis"),  "result": ""},
@@ -271,7 +275,8 @@ def save_project(pid):
         return jsonify({"error": "not found"}), 404
     data = request.json or {}
     for key in ("source_text", "master_prompt", "hero_prompt",
-                "duration_minutes", "chars_per_minute", "scene_duration_seconds", "humanize_mode", "name"):
+                "duration_minutes", "chars_per_minute", "scene_duration_seconds",
+                "humanize_mode", "voice_language", "name"):
         if key in data:
             project[key] = data[key]
     if "stages" in data:
@@ -322,6 +327,32 @@ def export_scenes(pid):
     return send_file(buf, as_attachment=True,
                      download_name=f"{safe}_scenes.ndjson",
                      mimetype="application/x-ndjson")
+
+
+@app.route("/project/<pid>/export_scenes_text")
+def export_scenes_text(pid):
+    """Export only the text lines from scene NDJSON — one line per scene for ElevenLabs."""
+    project = _load(pid)
+    if not project:
+        return "Not found", 404
+    ndjson = project["stages"].get("scene_builder", {}).get("result", "") or ""
+    texts = []
+    for line in ndjson.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            obj = json.loads(line)
+            if "text" in obj and isinstance(obj["text"], str) and obj["text"].strip():
+                texts.append(obj["text"].strip())
+        except Exception:
+            continue
+    out = "\n".join(texts)
+    buf  = io.BytesIO(out.encode("utf-8"))
+    safe = project["name"].replace(" ", "_")[:50]
+    return send_file(buf, as_attachment=True,
+                     download_name=f"{safe}_tts_text.txt",
+                     mimetype="text/plain")
 
 
 @app.route("/project/<pid>/export_tts")
@@ -522,12 +553,15 @@ def run_stage(pid):
                 )
 
             elif stage == "scene_builder":
-                # ── Scene Builder: chunked + video distribution ────────────────
+                # ── Scene Builder: smart-split + video distribution ───────────
                 import random as _random
 
+                _CHARS_PER_MINUTE_VOICE = {"ru": 850, "en": 700}
+                voice_language  = (data.get("voice_language") or
+                                   project.get("voice_language", "ru"))
                 scene_dur       = int(data.get("scene_duration_seconds",
                                                project.get("scene_duration_seconds", 6)))
-                chars_per_min   = int(project.get("chars_per_minute", 700))
+                chars_per_min   = _CHARS_PER_MINUTE_VOICE.get(voice_language, 850)
                 chars_per_scene = round(scene_dur * chars_per_min / 60)
                 raw_prompt      = project["stages"]["scene_builder"]["prompt"]
                 filled_prompt   = (raw_prompt
@@ -539,148 +573,137 @@ def run_stage(pid):
                                 "message": "Scene Builder: результат этапа Final пустой"})
                     return
 
-                # ── Preprocess: strip timing markers like [0:00], [1:30] ──────
                 import re as _re
 
-                def _preprocess_final_text(text):
-                    lines = text.split('\n')
-                    clean_lines = []
-                    for line in lines:
-                        stripped = line.strip()
-                        # Skip lines that are purely a timestamp
-                        if _re.match(r'^\[\d+:\d+\]$', stripped):
-                            continue
-                        # Strip leading timestamp from lines that have content after it
-                        cleaned = _re.sub(r'^\[\d+:\d+\]\s*', '', stripped)
-                        if cleaned:
-                            clean_lines.append(cleaned)
-                    return '\n'.join(clean_lines)
+                # ── Preprocess: strip timing markers like [0:00], [1:30] ──────
+                def _strip_timecodes(text):
+                    text = _re.sub(r'\[\d+:\d+\]\s*', '', text)
+                    lines = [l.strip() for l in text.split('\n') if l.strip()]
+                    return ' '.join(lines)
 
-                final_text = _preprocess_final_text(final_text)
+                final_text = _strip_timecodes(final_text)
 
-                # ── NDJSON hygiene: parse, validate, normalize at scene level ───
+                # ── Smart semantic scene splitter ──────────────────────────────
+                def smart_split_into_scenes(text, target_chars, vl="ru"):
+                    sentences = _re.split(r'(?<=[.!?])\s+', text.strip())
+                    sentences = [s.strip() for s in sentences if s.strip()]
+                    min_c = int(target_chars * 0.5)
+                    max_c = int(target_chars * 1.8)
+                    scenes, current = [], ""
+                    for sent in sentences:
+                        if not current:
+                            current = sent; continue
+                        combined = current + " " + sent
+                        if len(combined) <= max_c:
+                            current = combined
+                        else:
+                            scenes.append(current.strip())
+                            current = sent
+                    if current.strip():
+                        scenes.append(current.strip())
+                    # Merge scenes that are too short
+                    merged, i = [], 0
+                    while i < len(scenes):
+                        if len(scenes[i]) < min_c and i + 1 < len(scenes):
+                            merged.append(scenes[i] + " " + scenes[i + 1])
+                            i += 2
+                        else:
+                            merged.append(scenes[i])
+                            i += 1
+                    return merged
+
+                # ── Duration & speed helpers ───────────────────────────────────
+                def calc_duration(text, vl="ru"):
+                    cpm = _CHARS_PER_MINUTE_VOICE.get(vl, 850)
+                    return max(1.0, round(len(text.strip()) / cpm * 60, 1))
+
+                def get_speed_tag(duration, target):
+                    ratio = duration / max(target, 0.1)
+                    if ratio < 0.7:   return "[slowly] "
+                    if ratio > 1.4:   return "[fast] "
+                    return ""
+
+                # ── NDJSON helpers ─────────────────────────────────────────────
                 def _norm_prompt_val(v):
-                    if v is None:
-                        return None
-                    if not isinstance(v, str):
-                        return None
+                    if v is None: return None
+                    if not isinstance(v, str): return None
                     s = v.strip()
-                    if not s:
-                        return None
-                    if s.lower() == "null":
-                        return None
-                    return s
-
-                def _is_meaningful_text(s):
-                    if not isinstance(s, str):
-                        return False
-                    t = s.strip()
-                    if not t:
-                        return False
-                    # Ignore pure time marks accidentally emitted as scene text
-                    if _re.match(r'^\[\d+:\d+\]$', t):
-                        return False
-                    return True
+                    return None if (not s or s.lower() == "null") else s
 
                 def _explode_json_candidates(raw):
-                    """
-                    Split raw model output into JSON object candidates.
-                    Handles glued objects like `}{` and line breaks.
-                    """
                     candidates = []
                     for line in raw.split('\n'):
                         line = line.strip()
-                        if not line:
-                            continue
-                        parts = _re.split(r'(?<=\})\s*(?=\{)', line)
-                        for p in parts:
+                        if not line: continue
+                        for p in _re.split(r'(?<=\})\s*(?=\{)', line):
                             p = p.strip()
-                            if p:
-                                candidates.append(p)
+                            if p: candidates.append(p)
                     return candidates
 
-                def _parse_scene_blocks(raw):
+                def _parse_presplit_batch(raw, pre_texts_dict):
                     """
-                    Parse NDJSON-like scene stream into normalized scene dicts.
-                    Scene shape:
-                      {"scene_id": "...", "text": "...", "start":{"prompt":...}, "end":..., "video":...}
+                    Parse 4-line NDJSON (scene_id + start + end + video).
+                    Text is taken from pre_texts_dict[scene_id].
                     """
                     objs = []
                     for cand in _explode_json_candidates(raw):
-                        try:
-                            objs.append(json.loads(cand))
-                        except Exception:
-                            continue
+                        try: objs.append(json.loads(cand))
+                        except Exception: continue
 
-                    scenes = []
-                    cur = None
-                    dropped_empty = 0
+                    scenes, cur = [], None
 
-                    def _finalize(scene):
-                        nonlocal dropped_empty
-                        if not scene:
-                            return
-                        txt = (scene.get("text") or "").strip()
-                        if not _is_meaningful_text(txt):
-                            dropped_empty += 1
-                            return
-
-                        start_p = _norm_prompt_val(((scene.get("start") or {}).get("prompt")))
-                        end_p = _norm_prompt_val(((scene.get("end") or {}).get("prompt")))
-                        video_p = _norm_prompt_val(((scene.get("video") or {}).get("prompt")))
-
-                        # Keep pipeline robust: if text exists but start prompt is absent,
-                        # synthesize a safe fallback prompt instead of dropping content.
-                        if start_p is None:
-                            fallback = txt[:220].replace('\n', ' ')
-                            start_p = (
-                                "Flat 2D stick-figure scene, bold outlines, "
-                                f"illustrate: {fallback}"
-                            )
-
+                    def _fin(scene):
+                        if not scene: return
+                        sid  = str(scene.get("scene_id") or "").strip()
+                        text = pre_texts_dict.get(sid, "").strip()
+                        if not text: return
+                        sp = _norm_prompt_val((scene.get("start") or {}).get("prompt"))
+                        if sp is None:
+                            sp = ("Flat 2D stick-figure scene, bold outlines, illustrate: "
+                                  + text[:200].replace('\n', ' '))
                         scenes.append({
-                            "scene_id": str(scene.get("scene_id") or "").strip() or "scene_000",
-                            "text": txt,
-                            "start": {"prompt": start_p},
-                            "end": {"prompt": end_p},
-                            "video": {"prompt": video_p},
+                            "scene_id": sid,
+                            "text": text,
+                            "start": {"prompt": sp},
+                            "end":   {"prompt": _norm_prompt_val((scene.get("end")   or {}).get("prompt"))},
+                            "video": {"prompt": _norm_prompt_val((scene.get("video") or {}).get("prompt"))},
                         })
 
                     for obj in objs:
                         if "scene_id" in obj:
-                            _finalize(cur)
-                            cur = {
-                                "scene_id": obj.get("scene_id"),
-                                "text": "",
-                                "start": {"prompt": None},
-                                "end": {"prompt": None},
-                                "video": {"prompt": None},
-                            }
-                            continue
-                        if cur is None:
-                            continue
-                        if "text" in obj:
-                            cur["text"] = obj.get("text")
-                        if "start" in obj and isinstance(obj.get("start"), dict):
+                            _fin(cur)
+                            cur = {"scene_id": obj["scene_id"],
+                                   "start": {"prompt": None},
+                                   "end":   {"prompt": None},
+                                   "video": {"prompt": None}}
+                        elif cur is None: continue
+                        elif "start" in obj and isinstance(obj.get("start"), dict):
                             cur["start"] = {"prompt": obj["start"].get("prompt")}
-                        if "end" in obj and isinstance(obj.get("end"), dict):
+                        elif "end" in obj and isinstance(obj.get("end"), dict):
                             cur["end"] = {"prompt": obj["end"].get("prompt")}
-                        if "video" in obj and isinstance(obj.get("video"), dict):
+                        elif "video" in obj and isinstance(obj.get("video"), dict):
                             cur["video"] = {"prompt": obj["video"].get("prompt")}
+                        # also handle full 5-line format (text line present)
+                        elif "text" in obj and cur:
+                            cur.setdefault("_text_override", obj["text"])
+                    _fin(cur)
+                    return scenes
 
-                    _finalize(cur)
-                    return scenes, dropped_empty
-
-                def _serialize_scenes_ndjson(scenes):
-                    out_lines = []
+                def _serialize_scenes_ndjson(scenes, vl="ru", target_dur=6.0):
+                    out = []
                     for i, sc in enumerate(scenes, start=1):
-                        sid = f"scene_{i:03d}"
-                        out_lines.append(json.dumps({"scene_id": sid}, ensure_ascii=False))
-                        out_lines.append(json.dumps({"text": sc["text"]}, ensure_ascii=False))
-                        out_lines.append(json.dumps({"start": {"prompt": sc["start"]["prompt"]}}, ensure_ascii=False))
-                        out_lines.append(json.dumps({"end": {"prompt": sc["end"]["prompt"]}}, ensure_ascii=False))
-                        out_lines.append(json.dumps({"video": {"prompt": sc["video"]["prompt"]}}, ensure_ascii=False))
-                    return "\n".join(out_lines)
+                        sid  = f"scene_{i:03d}"
+                        text = sc["text"]
+                        dur  = calc_duration(text, vl)
+                        stag = get_speed_tag(dur, target_dur)
+                        out.append(json.dumps({"scene_id": sid},                         ensure_ascii=False))
+                        out.append(json.dumps({"text": text},                            ensure_ascii=False))
+                        out.append(json.dumps({"start": {"prompt": sc["start"]["prompt"]}}, ensure_ascii=False))
+                        out.append(json.dumps({"end":   {"prompt": sc["end"]["prompt"]}},   ensure_ascii=False))
+                        out.append(json.dumps({"video": {"prompt": sc["video"]["prompt"]}}, ensure_ascii=False))
+                        out.append(json.dumps({"duration_seconds": dur},                 ensure_ascii=False))
+                        out.append(json.dumps({"speed_tag": stag},                       ensure_ascii=False))
+                    return "\n".join(out)
 
                 # ── Video distribution helpers ──────────────────────────────────
                 def _scene_zone(idx, total):
@@ -689,47 +712,35 @@ def run_stage(pid):
                     elif pos < 0.67: return "MIDDLE",    0.35
                     else:            return "END",        0.12
 
-                def _video_flags_for_chunk(scene_start, n_scenes_in_chunk, total_scenes):
-                    """Return list of (generate: bool, zone: str) per scene in chunk."""
-                    flags = []
-                    for i in range(n_scenes_in_chunk):
-                        zone, prob = _scene_zone(scene_start + i, total_scenes)
-                        flags.append((_random.random() < prob, zone))
-                    return flags
+                def _video_flags(scene_start, n, total):
+                    return [(_random.random() < _scene_zone(scene_start + i, total)[1],
+                             _scene_zone(scene_start + i, total)[0])
+                            for i in range(n)]
 
-                # ── Split text into ~2500-char chunks at sentence boundaries ────
-                def _split_chunks(text, size=2500):
-                    parts = []
-                    while text:
-                        if len(text) <= size:
-                            parts.append(text); break
-                        cut = size
-                        for sep in ('. ', '! ', '? ', '\n'):
-                            pos = text.rfind(sep, size // 2, size)
-                            if pos != -1:
-                                cut = pos + len(sep); break
-                        parts.append(text[:cut])
-                        text = text[cut:]
-                    return parts
+                # ── Pre-split text into semantic scenes ────────────────────────
+                pre_scenes   = smart_split_into_scenes(final_text, chars_per_scene, voice_language)
+                total_scenes_est = max(len(pre_scenes), 1)
 
-                chunks = _split_chunks(final_text)
-                n_chunks = len(chunks)
+                # Map scene_id → text for LLM result lookup
+                pre_texts_dict = {}
+                for gi, txt in enumerate(pre_scenes):
+                    pre_texts_dict[f"scene_{gi + 1:03d}"] = txt
 
-                # Estimate total scenes across all chunks for zone calculation
-                total_scenes_est = max(1, len(final_text) // max(chars_per_scene, 1))
+                # Group into batches of 20 scenes for LLM calls
+                BATCH_SIZE = 20
+                batches  = [pre_scenes[i:i + BATCH_SIZE]
+                             for i in range(0, len(pre_scenes), BATCH_SIZE)]
+                n_chunks = len(batches)
 
                 all_scenes = []
-                scene_num  = 1  # target id for next chunk start
+                scene_num  = 1  # global 1-based counter
                 total_dropped_empty = 0
 
-                for ci, chunk_text in enumerate(chunks):
-                    # How many scenes expected in this chunk
-                    n_in_chunk = max(1, len(chunk_text) // max(chars_per_scene, 1))
+                for ci, batch_scene_texts in enumerate(batches):
+                    n_in_chunk = len(batch_scene_texts)
+                    flags = _video_flags(scene_num - 1, n_in_chunk, total_scenes_est)
 
-                    # Build video instruction for this chunk
-                    flags = _video_flags_for_chunk(
-                        scene_num - 1, n_in_chunk, total_scenes_est
-                    )
+                    # Build per-scene video instructions
                     video_lines = []
                     for k, (gen, zone) in enumerate(flags):
                         sn = scene_num + k
@@ -737,11 +748,19 @@ def run_stage(pid):
                             video_lines.append(f"scene_{sn:03d}: GENERATE_VIDEO=true, zone={zone}")
                         else:
                             video_lines.append(f"scene_{sn:03d}: GENERATE_VIDEO=false")
-                    video_instruction = "VIDEO DISTRIBUTION FOR THIS CHUNK:\n" + "\n".join(video_lines)
+                    video_instruction = "VIDEO DISTRIBUTION FOR THIS BATCH:\n" + "\n".join(video_lines)
+
+                    # Format pre-split scenes for the LLM
+                    scene_lines = []
+                    for k, stxt in enumerate(batch_scene_texts):
+                        sn = scene_num + k
+                        scene_lines.append(f'scene_{sn:03d}: {stxt}')
+                    scenes_block = "\n".join(scene_lines)
 
                     yield emit({"type": "status",
                                 "message": (f"Часть {ci+1}/{n_chunks} "
-                                            f"— сцены с scene_{scene_num:03d}...")})
+                                            f"— сцены {scene_num}–{scene_num + n_in_chunk - 1} "
+                                            f"из {total_scenes_est}...")})
 
                     chunk_system = filled_prompt
                     if scene_num > 1:
@@ -752,7 +771,8 @@ def run_stage(pid):
 
                     user_msg = (
                         f"{video_instruction}\n\n"
-                        f"ТЕКСТ:\n{chunk_text}"
+                        f"ГОТОВЫЕ СЦЕНЫ (текст зафиксирован, генерируй только визуальные промпты):\n"
+                        f"{scenes_block}"
                     )
 
                     chunk_stream = client.chat.completions.create(
@@ -772,26 +792,42 @@ def run_stage(pid):
                             chunk_raw += delta
                             yield emit({"type": "delta", "content": delta})
 
-                    # Parse + sanitize chunk scenes
-                    chunk_scenes, dropped_empty = _parse_scene_blocks(chunk_raw)
-                    total_dropped_empty += dropped_empty
+                    # Parse batch: use pre-split texts as authoritative source
+                    batch_lookup = {f"scene_{scene_num + k:03d}": stxt
+                                    for k, stxt in enumerate(batch_scene_texts)}
+                    chunk_scenes = _parse_presplit_batch(chunk_raw, batch_lookup)
+
+                    # Fallback: if LLM returned nothing for a scene, synthesise it
+                    returned_ids = {sc["scene_id"] for sc in chunk_scenes}
+                    for k, stxt in enumerate(batch_scene_texts):
+                        sid = f"scene_{scene_num + k:03d}"
+                        if sid not in returned_ids:
+                            sp = ("Flat 2D stick-figure scene, bold outlines, illustrate: "
+                                  + stxt[:200].replace('\n', ' '))
+                            chunk_scenes.append({"scene_id": sid, "text": stxt,
+                                                 "start": {"prompt": sp},
+                                                 "end":   {"prompt": None},
+                                                 "video": {"prompt": None}})
+                            total_dropped_empty += 1
+
+                    # Keep order consistent with pre-split
+                    chunk_scenes.sort(key=lambda s: s["scene_id"])
+
                     all_scenes.extend(chunk_scenes)
                     scene_num = len(all_scenes) + 1
                     yield emit({
                         "type": "status",
-                        "message": (
-                            f"Часть {ci+1}/{n_chunks}: валидных сцен {len(chunk_scenes)}, "
-                            f"отброшено пустых {dropped_empty}"
-                        ),
+                        "message": (f"Часть {ci+1}/{n_chunks}: {len(chunk_scenes)} сцен"),
                     })
 
-                # Final renumber + serialize
-                full_content = _serialize_scenes_ndjson(all_scenes)
+                # Final renumber + serialize (7-line NDJSON with duration + speed_tag)
+                full_content = _serialize_scenes_ndjson(
+                    all_scenes, vl=voice_language, target_dur=float(scene_dur))
                 yield emit({
                     "type": "status",
                     "message": (
-                        f"Scene Builder sanitize: итог {len(all_scenes)} сцен, "
-                        f"удалено пустых {total_dropped_empty}"
+                        f"Scene Builder: {len(all_scenes)} сцен, "
+                        f"язык={voice_language}, {scene_dur}сек/сцена"
                     ),
                 })
 

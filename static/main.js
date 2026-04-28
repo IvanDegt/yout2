@@ -194,6 +194,7 @@ function renderAll() {
   $('duration-slider').value = P.duration_minutes || 20;
   $('chars-per-min').value   = P.chars_per_minute || 700;
   $('humanize-mode').value   = P.humanize_mode || 'norm';
+  $('voice-language-select').value = P.voice_language || 'ru';
   updateDurationDisplay();
   updateSourceCount();
 
@@ -214,6 +215,7 @@ function renderAll() {
   if (P.stages.scene_builder?.result) {
     updateSceneCount(P.stages.scene_builder.result);
     $('btn-export-scenes').style.display = 'inline-flex';
+    $('btn-export-scenes-text').style.display = 'inline-flex';
   }
 
   // Block writer — render saved blocks as cards
@@ -665,14 +667,16 @@ async function saveProject() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name:             P.name,
-        source_text:      P.source_text,
-        master_prompt:    P.master_prompt,
-        hero_prompt:      P.hero_prompt,
-        duration_minutes: P.duration_minutes,
-        chars_per_minute: P.chars_per_minute,
-        humanize_mode:    P.humanize_mode || 'norm',
-        stages:           P.stages,
+        name:                   P.name,
+        source_text:            P.source_text,
+        master_prompt:          P.master_prompt,
+        hero_prompt:            P.hero_prompt,
+        duration_minutes:       P.duration_minutes,
+        chars_per_minute:       P.chars_per_minute,
+        humanize_mode:          P.humanize_mode || 'norm',
+        voice_language:         P.voice_language || 'ru',
+        scene_duration_seconds: P.scene_duration_seconds || 6,
+        stages:                 P.stages,
       }),
     });
   } catch (e) {
@@ -1129,6 +1133,15 @@ function setupEventListeners() {
     scheduleSave();
   });
 
+  // Voice language
+  $('voice-language-select').addEventListener('change', e => {
+    P.voice_language = e.target.value || 'ru';
+    // Update scene duration hint to reflect new language CPM
+    const sds = parseInt($('scene-duration-slider').value) || 6;
+    updateSceneDurationDisplay(sds);
+    scheduleSave();
+  });
+
   // Scene duration slider
   $('scene-duration-slider').addEventListener('input', e => {
     onSceneDurationChange(e.target.value);
@@ -1200,12 +1213,19 @@ function onSceneDurationChange(val) {
 }
 
 function updateSceneDurationDisplay(secs) {
-  const cpm    = parseInt(P.chars_per_minute) || 700;
-  const chars  = Math.round(secs * cpm / 60);
-  const valEl  = $('scene-duration-val');
-  const hint   = $('scene-chars-hint');
-  if (valEl) valEl.textContent = `${secs} сек / сцена`;
-  if (hint)  hint.textContent  = `≈ ${chars} симв`;
+  const CPM      = { ru: 850, en: 700 };
+  const lang     = P.voice_language || 'ru';
+  const cpm      = CPM[lang] || 850;
+  const chars    = Math.round(secs * cpm / 60);
+  const charsAlt = Math.round(secs * (lang === 'ru' ? 700 : 850) / 60);
+  const altLang  = lang === 'ru' ? 'en' : 'ru';
+
+  const valEl   = $('scene-duration-val');
+  const hint    = $('scene-chars-hint');
+  const langHnt = $('scene-lang-hint');
+  if (valEl)   valEl.textContent  = `${secs} сек / сцена`;
+  if (hint)    hint.textContent   = `≈ ${chars} симв (${lang})`;
+  if (langHnt) langHnt.textContent = `/ ≈ ${charsAlt} (${altLang})`;
 }
 
 function updateSceneBtnState() {
@@ -1222,18 +1242,23 @@ function updateSceneCount(ndjson) {
   const lines = (ndjson || '').split('\n');
   let totalScenes = 0;
   let withVideo   = 0;
+  let durSum      = 0;
+  let durCount    = 0;
   lines.forEach(line => {
     line = line.trim();
     if (!line) return;
     try {
       const obj = JSON.parse(line);
-      if (obj.scene_id)                        totalScenes++;
-      if (obj.video && obj.video.prompt !== null) withVideo++;
+      if (obj.scene_id)                              totalScenes++;
+      if (obj.video && obj.video.prompt !== null)    withVideo++;
+      if (typeof obj.duration_seconds === 'number') { durSum += obj.duration_seconds; durCount++; }
     } catch (_) {}
   });
   if (!totalScenes) { el.textContent = ''; return; }
-  const pct = totalScenes ? Math.round(withVideo / totalScenes * 100) : 0;
-  el.textContent = `· ${totalScenes} сцен · ${withVideo} с видео (${pct}%)`;
+  const pct    = Math.round(withVideo / totalScenes * 100);
+  const avgDur = durCount ? (durSum / durCount).toFixed(1) : null;
+  const durPart = avgDur ? ` · ср. ${avgDur}с` : '';
+  el.textContent = `· ${totalScenes} сцен · ${withVideo} с видео (${pct}%)${durPart}`;
 }
 
 async function resetSceneBuilderPrompt() {
@@ -1276,7 +1301,9 @@ async function runSceneBuilder() {
   stopRequested = false;
   if (collapsed['scene_builder']) toggleCard('scene_builder');
   $('btn-export-scenes').style.display = 'none';
-  log(`▶ Scene Builder: ${secs} сек/сцена, ≈${charsScene} симв/сцена`, 'info');
+  $('btn-export-scenes-text').style.display = 'none';
+  const voiceLang = P.voice_language || 'ru';
+  log(`▶ Scene Builder: ${secs} сек/сцена, ≈${charsScene} симв/сцена (${voiceLang})`, 'info');
 
   try {
     activeAbortController = new AbortController();
@@ -1286,6 +1313,7 @@ async function runSceneBuilder() {
         stage: 'scene_builder',
         scene_duration_seconds: secs,
         chars_per_scene: charsScene,
+        voice_language: voiceLang,
         __signal: activeAbortController.signal,
       },
       {
@@ -1309,6 +1337,7 @@ async function runSceneBuilder() {
           updateSceneCount(full);
           setBadge('scene_builder', 'done');
           $('btn-export-scenes').style.display = 'inline-flex';
+          $('btn-export-scenes-text').style.display = 'inline-flex';
           let sceneCount = 0, videoCount = 0;
           full.split('\n').forEach(l => {
             l = l.trim(); if (!l) return;

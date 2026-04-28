@@ -49,6 +49,13 @@
           <span class="label-text">Симв/мин</span>
           <input type="number" id="chars-per-min" class="input-small" value="700" min="400" max="1200">
         </label>
+        <label>
+          <span class="label-text">Язык озвучки</span>
+          <select id="voice-language-select" class="input-small">
+            <option value="ru">Русский (850 симв/мин)</option>
+            <option value="en">English (700 chars/min)</option>
+          </select>
+        </label>
         <div class="target-chars-info">
           Цель: <strong id="target-chars-display">14 000</strong> символов
         </div>
@@ -495,6 +502,7 @@
             oninput="onSceneDurationChange(this.value)">
           <span class="sb-duration-val" id="scene-duration-val">6 сек / сцена</span>
           <span class="sb-chars-hint" id="scene-chars-hint"></span>
+          <span class="sb-lang-hint" id="scene-lang-hint" style="color:var(--text-d);font-size:.75rem;margin-left:4px"></span>
         </div>
 
         <!-- Prompt -->
@@ -520,6 +528,9 @@
               <a class="btn btn-xs btn-ghost" id="btn-export-scenes"
                 href="/project/{{ project.id }}/export_scenes"
                 style="display:none">⬇ Скачать .ndjson</a>
+              <a class="btn btn-xs btn-ghost" id="btn-export-scenes-text"
+                href="/project/{{ project.id }}/export_scenes_text"
+                style="display:none" title="Только text-поля — для ElevenLabs">⬇ Скачать text (.txt)</a>
             </div>
           </div>
           <textarea class="result-textarea result-textarea-tall" id="result-scene_builder" readonly
