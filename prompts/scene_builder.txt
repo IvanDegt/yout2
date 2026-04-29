@@ -28,10 +28,13 @@ FORMAT (strict NDJSON, no extra text):
 
 ---
 
-VISUAL STYLE (always):
-- flat 2D stick-figure animation
-- bold black outlines
-- clean geometric shapes, no photorealism, no painterly texture
+VISUAL STYLE (always — вставляй в КАЖДЫЙ промпт):
+- flat 2D cartoon animation frame
+- hand-drawn illustration, bold thick black outlines
+- flat solid colors, clean cel animation style
+- backgrounds: flat color silhouettes only, simple geometric shapes
+- NO photorealism, NO photography, NO 3D rendering, NO realistic textures
+- NO marble, NO stone texture, NO realistic lighting, NO lens effects
 
 ---
 
@@ -52,8 +55,8 @@ VISUAL STYLE (always):
 - смерть / убийство / катастрофа → показывай символ или действие прямо в кадре
 - победа / основание / рождение → показывай ключевой момент
 
-Плохо: "King Numitor stands on balcony, ancient buildings in background"
-Хорошо: "Stick-figure king stands on balcony, text label 'NUMITOR' below figure, stone column silhouettes, text overlay '771 BC' top-right corner, wide shot, dusk"
+Плохо: "King Numitor stands on balcony, ancient buildings in background, stone columns"
+Хорошо: "Stick-figure king stands on flat-color balcony ledge, label 'NUMITOR' below figure, simple geometric column silhouettes on solid warm-orange background, text overlay '771 BC' top-right, wide shot, flat 2D cartoon animation frame, bold black outlines, no photorealism"
 
 ---
 
@@ -75,6 +78,13 @@ VISUAL STYLE (always):
 - не повторяй одинаковый ракурс более 2 сцен подряд
 - без пустых фраз: "epic", "cinematic", "mysterious atmosphere", "powerful"
 
+ПРАВИЛА ОПИСАНИЯ ФОНА (критично для стиля):
+- Никогда не используй: "stone columns", "marble floor", "throne room", "realistic architecture"
+- Вместо этого: "flat color column silhouettes", "simple geometric throne shape", "solid color background"
+- Свет описывай через цвет, не текстуру: вместо "torchlight flickering on stone" → "orange warm background, flat torch shapes"
+- Если нужен интерьер: "flat illustrated room, solid [color] walls, simple geometric furniture silhouettes"
+- Если нужен пейзаж: "flat color landscape, silhouette hills, solid sky gradient"
+
 ---
 
 ПРАВИЛО №3 — END.PROMPT:
@@ -92,12 +102,12 @@ end.prompt = финальный кадр ЭТОЙ сцены, показываю
 
 Примеры правильной пары:
 - text: "Его убили. Остался только сын."
-  start: "Stick-figure king falls from throne, sword visible, throne room columns, medium shot, torchlight, tense"
-  end: "Lone stick-figure child stands next to empty throne, small figure, wide shot, dim torchlight, lonely"
+  start: "Stick-figure king falling from flat geometric throne, sword silhouette, solid dark-red background, flat color column shapes, medium shot, flat 2D cartoon animation, bold outlines, tense"
+  end: "Small stick-figure child stands alone next to empty geometric throne shape, solid dark background, wide shot, flat 2D cartoon animation, bold outlines, lonely"
 
 - text: "25 километров. 771 год до нашей эры."
-  start: "Map with distance marker '25 KM' between two city dots, stick-figure traveler on road, overhead view, daylight"
-  end: "Map zoomed in on destination city dot, text '771 BC' in corner, stick-figure arrives at gates, daylight"
+  start: "Flat illustrated overhead map, two dot-cities labeled 'ROME' and 'ALBA LONGA', dashed line with '25 KM' between them, solid beige background, text '771 BC' top-right, flat 2D cartoon animation, bold outlines"
+  end: "Same flat map, dot labeled 'ALBA LONGA' fades to grey, '25 KM' and '771 BC' text remain, solid beige background, flat 2D cartoon animation, bold outlines"
 
 ---
 
