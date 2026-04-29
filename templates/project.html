@@ -505,6 +505,18 @@
           <span class="sb-lang-hint" id="scene-lang-hint" style="color:var(--text-d);font-size:.75rem;margin-left:4px"></span>
         </div>
 
+        <!-- Style prefix -->
+        <div class="prompt-block">
+          <div class="prompt-label">
+            Стиль сцен
+            <span style="color:var(--text-d);font-size:.7rem;font-weight:400;margin-left:6px">добавляется в начало каждого промпта</span>
+          </div>
+          <textarea class="prompt-textarea" id="scene-style-prefix"
+            rows="2" style="height:54px;resize:vertical"
+            placeholder="Например: flat 2D stick-figure animation, bold black outlines, hand-drawn feel"
+            oninput="onSceneStyleChange(this.value)"></textarea>
+        </div>
+
         <!-- Prompt -->
         <div class="prompt-block">
           <div class="prompt-label">

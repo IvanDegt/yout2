@@ -211,6 +211,7 @@ function renderAll() {
   const sds = P.scene_duration_seconds || 6;
   $('scene-duration-slider').value = sds;
   updateSceneDurationDisplay(sds);
+  $('scene-style-prefix').value = P.scene_style_prefix || '';
   updateSceneBtnState();
   if (P.stages.scene_builder?.result) {
     updateSceneCount(P.stages.scene_builder.result);
@@ -1210,6 +1211,11 @@ function onSceneDurationChange(val) {
   const secs = parseInt(val);
   P.scene_duration_seconds = secs;
   updateSceneDurationDisplay(secs);
+  scheduleSave();
+}
+
+function onSceneStyleChange(val) {
+  P.scene_style_prefix = val;
   scheduleSave();
 }
 

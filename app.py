@@ -189,6 +189,9 @@ def _load(project_id: str) -> dict | None:
     if "voice_language" not in project:
         project["voice_language"] = "ru"
         changed = True
+    if "scene_style_prefix" not in project:
+        project["scene_style_prefix"] = ""
+        changed = True
     if "humanize_mode" not in project:
         project["humanize_mode"] = "norm"
         changed = True
@@ -244,6 +247,7 @@ def new_project():
         "chars_per_minute": 700,
         "scene_duration_seconds": 6,
         "voice_language": "ru",
+        "scene_style_prefix": "",
         "humanize_mode": "norm",
         "stages": {
             "pre_analysis":  {"prompt": _load_prompt("pre_analysis"),  "result": ""},
@@ -277,7 +281,7 @@ def save_project(pid):
     data = request.json or {}
     for key in ("source_text", "master_prompt", "hero_prompt",
                 "duration_minutes", "chars_per_minute", "scene_duration_seconds",
-                "humanize_mode", "voice_language", "name"):
+                "humanize_mode", "voice_language", "scene_style_prefix", "name"):
         if key in data:
             project[key] = data[key]
     if "stages" in data:
@@ -570,6 +574,7 @@ def run_stage(pid):
                                                project.get("scene_duration_seconds", 6)))
                 chars_per_min   = _CHARS_PER_MINUTE_VOICE.get(voice_language, 850)
                 chars_per_scene = round(scene_dur * chars_per_min / 60)
+                scene_style_prefix = (project.get("scene_style_prefix") or "").strip()
                 raw_prompt      = project["stages"]["scene_builder"]["prompt"]
                 filled_prompt   = (raw_prompt
                                    .replace("{scene_duration_seconds}", str(scene_dur))
@@ -637,6 +642,12 @@ def run_stage(pid):
                     s = v.strip()
                     return None if (not s or s.lower() == "null") else s
 
+                def _with_style(prompt: str) -> str:
+                    """Prepend scene_style_prefix to a prompt if set."""
+                    if not scene_style_prefix or not prompt:
+                        return prompt
+                    return f"{scene_style_prefix}, {prompt}"
+
                 def _explode_json_candidates(raw):
                     candidates = []
                     for line in raw.split('\n'):
@@ -690,8 +701,8 @@ def run_stage(pid):
                         scenes.append({
                             "scene_id": sid,
                             "text": text,
-                            "start": {"prompt": sp},
-                            "end":   {"prompt": ep},
+                            "start": {"prompt": _with_style(sp)},
+                            "end":   {"prompt": _with_style(ep)},
                             "video": {"prompt": _norm_prompt_val((scene.get("video") or {}).get("prompt"))},
                         })
 
@@ -835,8 +846,8 @@ def run_stage(pid):
                                 "state after the action settles, flat 2D animation style"
                             )
                             chunk_scenes.append({"scene_id": sid, "text": stxt,
-                                                 "start": {"prompt": sp},
-                                                 "end":   {"prompt": ep},
+                                                 "start": {"prompt": _with_style(sp)},
+                                                 "end":   {"prompt": _with_style(ep)},
                                                  "video": {"prompt": None}})
                             total_dropped_empty += 1
 
