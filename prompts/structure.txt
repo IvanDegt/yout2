@@ -34,6 +34,13 @@
 
 Обязательно: open_loops из Pre-Analysis должны быть открыты в первых 20% и закрыты не раньше 70%.
 
+ТИЗЕР НА КОНЕЦ (обязателен в каждом видео):
+- БЛОК 2 (второй по счёту, ~20-30 секунда) ОБЯЗАН заканчиваться фразой end_tease.promise_line из Pre-Analysis.
+  Пропиши в content_notes: "ОБЯЗАТЕЛЬНО в конце блока: [вставить end_tease.promise_line]"
+  hook_type = tease_forward, hook_placement = end
+- ПОСЛЕДНИЙ блок ОБЯЗАН закрыть эту петлю — раскрыть end_tease.payoff_hint.
+  Пропиши в content_notes последнего блока: "ЗАКРЫТЬ END_TEASE: раскрыть [end_tease.payoff_hint]"
+
 ФОРМАТ ВЫВОДА — строго такой объект (не массив!):
 {
   "blocks": [ {...}, {...}, ... ]
