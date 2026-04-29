@@ -807,6 +807,13 @@ def run_stage(pid):
                                             f"из {total_scenes_est}...")})
 
                     chunk_system = filled_prompt
+                    if scene_style_prefix:
+                        chunk_system += (
+                            f"\n\nSTYLE PREFIX (обязателен в каждом промпте):\n"
+                            f"{scene_style_prefix}\n\n"
+                            f"Каждый start.prompt и end.prompt ДОЛЖЕН начинаться с этого стиля. "
+                            f"Не добавляй никаких других стилевых решений кроме заданного."
+                        )
                     if scene_num > 1:
                         chunk_system += (
                             f"\n\nПродолжай нумерацию с scene_{scene_num:03d}. "
