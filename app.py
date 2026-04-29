@@ -600,7 +600,7 @@ def run_stage(pid):
                     sentences = _re.split(r'(?<=[.!?])\s+', text.strip())
                     sentences = [s.strip() for s in sentences if s.strip()]
                     min_c = int(target_chars * 0.5)
-                    max_c = int(target_chars * 1.8)
+                    max_c = int(target_chars * 1.2)
                     scenes, current = [], ""
                     for sent in sentences:
                         if not current:
@@ -726,20 +726,27 @@ def run_stage(pid):
                     _fin(cur)
                     return scenes
 
+                STATIC_FRAME_SECONDS = float(project.get("frame_seconds_static", 3.0))
+
                 def _serialize_scenes_ndjson(scenes, vl="ru", target_dur=6.0):
                     out = []
                     for i, sc in enumerate(scenes, start=1):
-                        sid  = f"scene_{i:03d}"
-                        text = sc["text"]
-                        dur  = calc_duration(text, vl)
-                        stag = get_speed_tag(dur, target_dur)
-                        out.append(json.dumps({"scene_id": sid},                         ensure_ascii=False))
-                        out.append(json.dumps({"text": text},                            ensure_ascii=False))
-                        out.append(json.dumps({"start": {"prompt": sc["start"]["prompt"]}}, ensure_ascii=False))
-                        out.append(json.dumps({"end":   {"prompt": sc["end"]["prompt"]}},   ensure_ascii=False))
-                        out.append(json.dumps({"video": {"prompt": sc["video"]["prompt"]}}, ensure_ascii=False))
-                        out.append(json.dumps({"duration_seconds": dur},                 ensure_ascii=False))
-                        out.append(json.dumps({"speed_tag": stag},                       ensure_ascii=False))
+                        sid       = f"scene_{i:03d}"
+                        text      = sc["text"]
+                        dur       = calc_duration(text, vl)
+                        stag      = get_speed_tag(dur, target_dur)
+                        has_video = sc["video"]["prompt"] is not None
+                        # frame_seconds: seconds each static frame is shown (start + end).
+                        # null when video is present (video handles timing).
+                        frame_s   = None if has_video else STATIC_FRAME_SECONDS
+                        out.append(json.dumps({"scene_id": sid},                             ensure_ascii=False))
+                        out.append(json.dumps({"text": text},                                ensure_ascii=False))
+                        out.append(json.dumps({"start": {"prompt": sc["start"]["prompt"]}},  ensure_ascii=False))
+                        out.append(json.dumps({"end":   {"prompt": sc["end"]["prompt"]}},    ensure_ascii=False))
+                        out.append(json.dumps({"video": {"prompt": sc["video"]["prompt"]}},  ensure_ascii=False))
+                        out.append(json.dumps({"duration_seconds": dur},                     ensure_ascii=False))
+                        out.append(json.dumps({"speed_tag": stag},                           ensure_ascii=False))
+                        out.append(json.dumps({"frame_seconds": frame_s},                    ensure_ascii=False))
                     return "\n".join(out)
 
                 # ── Video distribution helpers ──────────────────────────────────
