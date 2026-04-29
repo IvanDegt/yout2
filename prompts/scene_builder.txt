@@ -26,70 +26,108 @@ FORMAT (strict NDJSON, no extra text):
 Нумерацию scene_id не менять.
 Значение null всегда без кавычек (null, не "null").
 
+---
+
 VISUAL STYLE (always):
-- flat 2D stick-figure
+- flat 2D stick-figure animation
 - bold black outlines
-- clean geometric shapes
-- no photorealism
-- no painterly texture
+- clean geometric shapes, no photorealism, no painterly texture
 
-SCENE UNDERSTANDING RULES:
-- одна сцена = одна законченная мысль (текст уже задан)
-- визуал должен буквально соответствовать тексту этой сцены
-- не выдумывай новых событий/персонажей/символов, если их нет в тексте
-- если в тексте есть дата/число/дистанция/имя — постарайся отразить это в кадре
+---
 
-START.PROMPT RULES (English only):
-start.prompt должен описывать статичный ключевой кадр.
-Обязательные элементы:
-1) главный субъект сцены
-2) конкретное действие или состояние
-3) конкретная среда/фон из текста
-4) один камерный ракурс (close-up / wide / overhead / low-angle / medium)
-5) один световой контекст (daylight / dusk / candlelight / moonlight etc.)
+ПРАВИЛО №1 — ДАННЫЕ ОБЯЗАТЕЛЬНЫ В КАДРЕ:
+
+Если в тексте сцены есть ЛЮБЫЕ из следующего — они ОБЯЗАНЫ появиться в start.prompt визуально:
+
+ЧИСЛА И ДАТЫ:
+- год → показывай как текстовый оверлей на кадре: "large text overlay '771 BC' on dark background"
+- число людей / расстояние / процент → показывай на табличке, карте, в инфографике
+- дата → текстовый штамп в углу кадра или центре
+
+ИМЕНА:
+- имя реального человека → показывай его или табличку с именем: "label 'NUMITOR' below figure"
+- название места / страны / города → показывай на карте или вывеске
+
+СОБЫТИЯ:
+- смерть / убийство / катастрофа → показывай символ или действие прямо в кадре
+- победа / основание / рождение → показывай ключевой момент
+
+Плохо: "King Numitor stands on balcony, ancient buildings in background"
+Хорошо: "Stick-figure king stands on balcony, text label 'NUMITOR' below figure, stone column silhouettes, text overlay '771 BC' top-right corner, wide shot, dusk"
+
+---
+
+ПРАВИЛО №2 — СПЕЦИФИЧНОСТЬ ПРОМПТА:
+
+Каждый промпт должен описывать ИМЕННО ЭТУ сцену, а не абстрактную картинку.
+Тест: можно ли угадать текст сцены, глядя только на промпт? Если нет — переделай.
+
+Обязательные элементы каждого start.prompt:
+1) конкретный субъект (кто/что — с именем/числом если есть в тексте)
+2) конкретное действие или ключевое состояние из текста
+3) конкретная среда из текста (не "ancient building" а "Roman forum with columns")
+4) один ракурс: close-up / wide / overhead / low-angle / medium
+5) один свет: daylight / dusk / torchlight / moonlight / cold fluorescent / etc.
+6) данные из текста (год, имя, число) — текстом в кадре если есть
 
 Ограничения:
-- максимум 1 mood adjective в конце (tense / calm / ominous / hopeful)
-- не повторяй одинаковые camera шаблоны более 2 сцен подряд
-- не используй пустые общие фразы типа "cinematic epic mysterious"
+- максимум 1 mood adjective в самом конце (tense / hopeful / ominous / calm)
+- не повторяй одинаковый ракурс более 2 сцен подряд
+- без пустых фраз: "epic", "cinematic", "mysterious atmosphere", "powerful"
 
-END.PROMPT RULES (English only, required):
-end.prompt должен описывать финальный кадр ТЕКУЩЕЙ сцены.
-Это НЕ новая сцена и НЕ следующая сцена.
+---
 
-Обязательная логика:
-1) те же ключевые сущности, что в start.prompt
-2) небольшой смысловой сдвиг к завершению мысли сцены
-3) визуально понятно, что это "после start" внутри той же мини-сцены
+ПРАВИЛО №3 — END.PROMPT:
 
-Пример:
-- start: character opens door in dark corridor
-- end: character stands in doorway, corridor behind now visible with dim light
+end.prompt = финальный кадр ЭТОЙ сцены, показывающий результат/итог сказанного.
 
-VIDEO.PROMPT RULES (English only):
-video.prompt = движение/переход от start.prompt к end.prompt в рамках одной сцены.
+Логика:
+- start показывает НАЧАЛО действия или ключевой момент
+- end показывает РЕЗУЛЬТАТ или ЗАВЕРШЕНИЕ мысли
 
-Генерируй video.prompt только если:
-- в user-инструкции есть GENERATE_VIDEO=true
-- и в сцене есть реальный motion potential.
+Обязательно:
+1) те же субъекты что в start
+2) визуальный сдвиг: что изменилось после start
+3) данные из текста сохраняются если были в start
 
-Если GENERATE_VIDEO=false или motion не нужен:
-- {"video":{"prompt":null}}
+Примеры правильной пары:
+- text: "Его убили. Остался только сын."
+  start: "Stick-figure king falls from throne, sword visible, throne room columns, medium shot, torchlight, tense"
+  end: "Lone stick-figure child stands next to empty throne, small figure, wide shot, dim torchlight, lonely"
 
-Короткая структура video.prompt:
-"what moves + how it moves from start to end + result/camera response, flat 2D animation style"
+- text: "25 километров. 771 год до нашей эры."
+  start: "Map with distance marker '25 KM' between two city dots, stick-figure traveler on road, overhead view, daylight"
+  end: "Map zoomed in on destination city dot, text '771 BC' in corner, stick-figure arrives at gates, daylight"
+
+---
+
+ПРАВИЛО №4 — VIDEO.PROMPT:
+
+video.prompt = конкретное движение от start к end, максимально связанное с ТЕКСТОМ сцены.
+
+Генерируй только если GENERATE_VIDEO=true и в сцене есть реальный motion potential.
+Иначе: {"video":{"prompt":null}}
+
+Структура (строго):
+"[что именно движется из текста] + [как движется — быстро/медленно/резко] + [результат движения] + [реакция камеры], flat 2D animation style"
+
+Требования к video.prompt:
+- движение должно отражать СМЫСЛ текста, а не просто "camera pans"
+- называй конкретные объекты из сцены (не "character" а "king", "soldier", "map marker")
+- если в тексте событие — покажи его через движение
+
+Плохо: "Character moves, camera pans right, flat 2D animation style"
+Хорошо: "King Numitor raises hand as soldiers rush in from left, figure collapses backward off throne, camera snaps to close-up on fallen crown, flat 2D animation style"
 
 По зонам:
-- BEGINNING: более динамично
-- MIDDLE: умеренно
-- END: мягко/затухающе
+- BEGINNING: резкое, быстрое, захватывающее — экшн с первого кадра
+- MIDDLE: умеренное, ритмичное — поддерживает темп
+- END: медленное, затухающее — финальный акцент
 
-ТИПОВЫЕ ПРИМЕРЫ (ориентир):
-- "Character raises map marker, camera pushes in, city outline brightens, flat 2D animation style"
-- "Door lock slowly clicks shut, camera holds close-up, corridor darkens, flat 2D animation style"
+---
 
 CRITICAL VALIDITY RULE:
-- Если text непустой, то start.prompt и end.prompt обязаны быть непустыми строками.
-- Вывод с пустым end.prompt считается невалидным.
+- Если text непустой → start.prompt и end.prompt обязаны быть непустыми строками
+- Вывод с пустым end.prompt невалиден
 
 Output only NDJSON.
